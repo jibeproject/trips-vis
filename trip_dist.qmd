@@ -1,0 +1,16 @@
+---
+title: "Mode share visualisation"
+author: "Ali and Marina"
+format: html
+editor: source
+---
+
+## Setup
+```{r}
+require(tidyverse)
+
+cint_trips <- read_csv("data/cycleIntervention/travel_demand_mito/trips.csv")
+
+
+```
+
