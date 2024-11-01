@@ -8,9 +8,120 @@ editor: source
 ## Setup
 ```{r}
 require(tidyverse)
+require(sf)
+require(gt)
 
-cint_trips <- read_csv("data/cycleIntervention/travel_demand_mito/trips.csv")
+# Change the path as needed, currently set to Manchester folder
 
+zone <- st_read("synpop/sp_2021/OA_2021_MCR.shp")
 
+trips_ref <- read.csv("simulationResults/ForUrbanTransition/reference/travel_demand_mito/trips.csv")
+
+trips_cint <- read.csv("simulationResults/ForUrbanTransition/cycleIntervention/travel_demand_mito/trips.csv")
+
+pp <- read.csv("synpop/sp_2021/pp_2021.csv")
+```
+
+## Data Preparation
+
+```{r}
+
+trips_ref <- trips_ref %>% 
+  mutate(scenario = "Reference")
+
+trips_cint <- trips_cint %>% 
+  mutate(scenario = "Cycling intervention")
+
+trips <- bind_rows(trips_ref, trips_cint)
+
+################### Adding Zone and Demographics ########################
+
+trips <- trips %>% 
+  left_join(zone %>% 
+              select(location_origin = LSOA21NM,id) %>% 
+              st_drop_geometry(),
+            by = c("origin" = "id")) %>% 
+  left_join(zone %>% 
+              select(location_destination = LSOA21NM,id) %>% 
+              st_drop_geometry(),
+            by = c("destination" = "id")) %>% 
+  left_join(pp, by = c("p.ID" = "id")) %>% 
+  mutate(location_origin = word(location_origin, 1),
+         location_destination = word(location_destination, 1),
+         gender = factor(gender,
+                         levels = c(1,2),
+                         labels = c("Male","Female")),
+         occupation = factor(occupation,
+                             levels = c(0, 1, 2, 3, 4),
+                             labels = c("toddler", "employed", "unemployed", "student", "retiree")),
+         mode = case_when(
+           mode == "autoDriver" ~ "Driving Car",
+           mode == "autoPassenger" ~ "Car Passenger",
+           mode == "pt" ~ "Public Transport",
+           mode == "walk" ~ "Walking",
+           mode == "cycle" ~ "Cycling",
+           TRUE ~ "Other")) %>% 
+  select(-schoolId, -workplace)
+
+```
+
+## Creating Visualizations
+
+### Table of the number of trips in each local authority in Greater Manchester
+
+```{r}
+trip_counts <- trips %>%
+  select(t.id, location_origin, location_destination) %>%
+  pivot_longer(cols = c(location_origin, location_destination),
+               names_to = "type",
+               values_to = "location") %>%
+  group_by(location) %>%
+  summarise(trip_count = n()) %>% 
+  ungroup() %>% 
+  mutate(percent_of_total = (trip_count / sum(trip_count)))
+
+t1 <- trip_counts %>%
+  gt() %>%
+  tab_header(
+    title = "Trips by Location",
+    subtitle = "Sum of trips within each Local Authority District"
+  ) %>%
+  cols_label(
+    location = "Location",
+    trip_count = "Count",
+    percent_of_total = "Percent of Total"
+  ) %>% 
+  fmt_percent(
+    columns = percent_of_total,
+    decimals = 1
+  )
+
+# Example plots
+
+plot1 <- ggplot(trips, aes(x = mode, fill = scenario)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5) + 
+  labs(title = "Distribution of Trips by Mode",
+       y = "Number of Trips",
+       fill = "Scenario") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank())
+
+plot2<- ggplot(trips, aes(x = mode, fill = gender)) +
+  geom_bar(position = "dodge") +
+  geom_text(stat = 'count', aes(label = ..count..), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.5) + 
+  labs(title = "Distribution of Trips by Gender",
+       y = "Number of Trips",
+       fill = "Gender") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank())
 ```
 
