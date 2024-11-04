@@ -10,6 +10,9 @@ editor: source
 require(tidyverse)
 require(sf)
 require(gt)
+require(ggplot2)
+require(dplyr)
+require(stringr)
 
 # Change the path as needed, currently set to Manchester folder
 
@@ -53,13 +56,18 @@ trips <- trips %>%
                          labels = c("Male","Female")),
          occupation = factor(occupation,
                              levels = c(0, 1, 2, 3, 4),
-                             labels = c("Toddler", "Employed", "Unemployed", "Student", "retiree")),
+                             labels = c("Toddler", "Employed", "Unemployed", "Student", "Retiree")),
+         distance = case_when(
+             mode %in% c("autoDriver", "autoPassenger", "pt") ~ t.distance_auto,
+             mode == "walk" ~ t.distance_walk,
+             mode == "bicycle" ~ t.distance_bike,
+             TRUE ~ NA_real_),
          mode = case_when(
            mode == "autoDriver" ~ "Driving Car",
            mode == "autoPassenger" ~ "Car Passenger",
            mode == "pt" ~ "Public Transport",
            mode == "walk" ~ "Walking",
-           mode == "cycle" ~ "Cycling",
+           mode == "bicycle" ~ "Cycling",
            TRUE ~ "Other")) %>% 
   select(-schoolId, -workplace)
 
@@ -83,6 +91,7 @@ trip_counts <- trips %>%
   mutate(percent_of_total = (trip_count / sum(trip_count)))
 
 trip_counts %>%
+  arrange(desc(trip_count)) %>% 
   gt() %>%
   tab_header(
     title = "Trips by Location",
@@ -95,8 +104,7 @@ trip_counts %>%
   ) %>% 
   fmt_percent(
     columns = percent_of_total,
-    decimals = 1
-  )
+    decimals = 1)
 
 # Trips by various demographic characteristics
 
@@ -116,7 +124,6 @@ ggplot(trips, aes(x = mode, fill = scenario)) +
   labs(title = "Mode Distribution",
        y = "Percentage",
        fill = "Scenario") +
-  scale_y_continuous(limits = c(0, 100)) +  
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -137,12 +144,56 @@ ggplot(trips, aes(x = mode, fill = gender)) +
             vjust = -0.25) + 
   labs(title = "Mode Distribution by Gender",
        fill = "Gender") +
-  scale_y_continuous(limits = c(0, 100)) +  
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
         plot.title = element_text(hjust = 0.5))
+
+# By Occupation
+ggplot(trips, aes(x = mode, fill = occupation)) +
+  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
+           position = "dodge", 
+           stat = "count") + 
+  geom_text(stat = "count", 
+            aes(y = after_stat(count) / total_trips * 100, 
+                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
+            position = position_dodge(width = 0.9), 
+            vjust = -0.25) + 
+  labs(title = "Mode Distribution by Occupation",
+       fill = "Occupation") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
+# Average weekly distance by mode of transportation
+
+avg_distance <- trips %>%
+  group_by(mode, scenario) %>%
+  summarize(avg_distance = mean(distance, na.rm = TRUE)) %>%
+  ungroup()
+
+ggplot(avg_distance, aes(x = mode, fill = scenario)) +
+  geom_bar(aes(y = avg_distance),
+           stat = "identity", 
+           position = "dodge") +
+  geom_text(aes(y = avg_distance, 
+                label = round(avg_distance, 1)), 
+            position = position_dodge(width = 0.9), 
+            vjust = -0.25) +
+  labs(title = "Average Weekly Distance by Mode of Transportation",
+       x = "Mode of Transportation",
+       y = "Average Distance (km)",
+       fill = "Scenario") +
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title.x = element_blank(),
+        plot.title = element_text(hjust = 0.5))
+
 ```
 
