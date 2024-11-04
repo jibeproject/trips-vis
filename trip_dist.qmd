@@ -53,7 +53,7 @@ trips <- trips %>%
                          labels = c("Male","Female")),
          occupation = factor(occupation,
                              levels = c(0, 1, 2, 3, 4),
-                             labels = c("toddler", "employed", "unemployed", "student", "retiree")),
+                             labels = c("Toddler", "Employed", "Unemployed", "Student", "retiree")),
          mode = case_when(
            mode == "autoDriver" ~ "Driving Car",
            mode == "autoPassenger" ~ "Car Passenger",
@@ -70,6 +70,8 @@ trips <- trips %>%
 ### Table of the number of trips in each local authority in Greater Manchester
 
 ```{r}
+# Table of the number of trips in each local authority in Greater Manchester
+
 trip_counts <- trips %>%
   select(t.id, location_origin, location_destination) %>%
   pivot_longer(cols = c(location_origin, location_destination),
@@ -80,7 +82,7 @@ trip_counts <- trips %>%
   ungroup() %>% 
   mutate(percent_of_total = (trip_count / sum(trip_count)))
 
-t1 <- trip_counts %>%
+trip_counts %>%
   gt() %>%
   tab_header(
     title = "Trips by Location",
@@ -96,32 +98,51 @@ t1 <- trip_counts %>%
     decimals = 1
   )
 
-# Example plots
+# Trips by various demographic characteristics
 
-plot1 <- ggplot(trips, aes(x = mode, fill = scenario)) +
-  geom_bar(position = "dodge") +
-  geom_text(stat = 'count', aes(label = ..count..), 
+total_trips <- nrow(trips)
+
+# Distribution of trips by mode and scenarios 
+
+ggplot(trips, aes(x = mode, fill = scenario)) +
+  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
+           position = "dodge", 
+           stat = "count") + 
+  geom_text(stat = "count", 
+            aes(y = after_stat(count) / total_trips * 100, 
+                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
             position = position_dodge(width = 0.9), 
-            vjust = -0.5) + 
-  labs(title = "Distribution of Trips by Mode",
-       y = "Number of Trips",
+            vjust = -0.25) + 
+  labs(title = "Mode Distribution",
+       y = "Percentage",
        fill = "Scenario") +
+  scale_y_continuous(limits = c(0, 100)) +  
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        axis.title.x = element_blank())
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5))
 
-plot2<- ggplot(trips, aes(x = mode, fill = gender)) +
-  geom_bar(position = "dodge") +
-  geom_text(stat = 'count', aes(label = ..count..), 
+# Distribution of trips by mode and gender
+
+ggplot(trips, aes(x = mode, fill = gender)) +
+  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
+           position = "dodge", 
+           stat = "count") + 
+  geom_text(stat = "count", 
+            aes(y = after_stat(count) / total_trips * 100, 
+                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
             position = position_dodge(width = 0.9), 
-            vjust = -0.5) + 
-  labs(title = "Distribution of Trips by Gender",
-       y = "Number of Trips",
+            vjust = -0.25) + 
+  labs(title = "Mode Distribution by Gender",
        fill = "Gender") +
+  scale_y_continuous(limits = c(0, 100)) +  
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
-        axis.title.x = element_blank())
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5))
 ```
 
