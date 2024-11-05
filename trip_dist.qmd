@@ -54,6 +54,8 @@ trips <- trips %>%
   left_join(pp%>%
               select(id,age,gender,occupation), by = c("p.ID" = "id")) 
 
+rm(pp, zone)
+
 trips <- trips %>% 
   mutate(gender = factor(gender,
                          levels = c(1,2),
@@ -62,10 +64,16 @@ trips <- trips %>%
                              levels = c(0, 1, 2, 3, 4),
                              labels = c("Toddler", "Employed", "Unemployed", "Student", "Retiree")),
          distance = case_when(
-             mode %in% c("autoDriver", "autoPassenger", "pt") ~ t.distance_auto,
-             mode == "walk" ~ t.distance_walk,
-             mode == "bicycle" ~ t.distance_bike,
-             TRUE ~ NA_real_),
+           mode %in% c("autoDriver", "autoPassenger", "pt") ~ t.distance_auto,
+           mode == "walk" ~ t.distance_walk,
+           mode == "bicycle" ~ t.distance_bike,
+           TRUE ~ NA_real_),
+         time = case_when(
+           mode %in% c("autoDriver", "autoPassenger") ~ time_auto,
+           mode == "pt" ~ time_pt,
+           mode == "walk" ~ time_walk,
+           mode == "bicycle" ~ time_bike,
+           TRUE ~ NA_real_),
          mode = case_when(
            mode == "autoDriver" ~ "Driving Car",
            mode == "autoPassenger" ~ "Car Passenger",
@@ -74,15 +82,15 @@ trips <- trips %>%
            mode == "bicycle" ~ "Cycling",
            TRUE ~ "Other"),
          t.purpose = case_when(
-             t.purpose == "HBW" ~ "Home-based-work",
-             t.purpose == "HBE" ~ "Home-based-education",
-             t.purpose == "HBA" ~ "Home-based-accompanying",
-             t.purpose == "HBS" ~ "Home-based-shopping",
-             t.purpose == "HBR" ~ "Home-based-recreation",
-             t.purpose == "HBO" ~ "Home-based-other",
-             t.purpose == "NHBO" ~ "Non-home-based-other",
-             t.purpose == "NHBW" ~ "Non-home-based-work",
-             TRUE ~ NA_character_),
+           t.purpose == "HBW" ~ "Home-based-work",
+           t.purpose == "HBE" ~ "Home-based-education",
+           t.purpose == "HBA" ~ "Home-based-accompanying",
+           t.purpose == "HBS" ~ "Home-based-shopping",
+           t.purpose == "HBR" ~ "Home-based-recreation",
+           t.purpose == "HBO" ~ "Home-based-other",
+           t.purpose == "NHBO" ~ "Non-home-based-other",
+           t.purpose == "NHBW" ~ "Non-home-based-work",
+           TRUE ~ NA_character_),
          mode = factor(mode, levels = c("Driving Car", 
                                         "Car Passenger", 
                                         "Public Transport", 
@@ -97,9 +105,11 @@ trips <- trips %>%
                                                   "Home-based-other", 
                                                   "Non-home-based-other", 
                                                   "Non-home-based-work")),
+         scenario = factor(scenario, levels = c("Reference",
+                                                 "Cycling intervention")),
          time_walk = t.distance_walk/2.92,
-         time_bike = t.distance_bike/10.44) 
-
+         time_bike = t.distance_bike/10.44,
+         time_pt = as.numeric(time_pt))
 
 ################### write out into Parquet file ########################
 
@@ -114,8 +124,8 @@ arrow::write_dataset(trips,path="simulationResults/ForUrbanTransition/visualizat
 # Table of the number of trips in each local authority in Greater Manchester
 
 trip_counts <- trips %>%
-  select(t.id, location_origin, location_destination) %>%
-  pivot_longer(cols = c(location_origin, location_destination),
+  select(t.id, LAD_origin, LAD_destination) %>%
+  pivot_longer(cols = c(LAD_origin, LAD_destination),
                names_to = "type",
                values_to = "location") %>%
   group_by(location) %>%
@@ -124,16 +134,16 @@ trip_counts <- trips %>%
   mutate(percent_of_total = (trip_count / sum(trip_count)))
 
 trip_counts %>%
-  arrange(desc(trip_count)) %>% 
+  arrange(desc(percent_of_total)) %>%
+  select(location, percent_of_total) %>%  # Exclude trip_count column
   gt() %>%
   tab_header(
     title = "Trips by Location",
-    subtitle = "Sum of trips within each Local Authority District"
+    subtitle = "Percentage of Trips Within Local Authority Districts"
   ) %>%
   cols_label(
     location = "Location",
-    trip_count = "Count",
-    percent_of_total = "Percent of Total"
+    percent_of_total = "% of Total"
   ) %>% 
   fmt_percent(
     columns = percent_of_total,
@@ -143,91 +153,205 @@ trip_counts %>%
 
 total_trips <- nrow(trips)
 
-# Distribution of trips by mode and scenarios 
+# Distribution of trips by mode and location 
 
-ggplot(trips, aes(x = mode, fill = scenario)) +
-  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
-           position = "dodge", 
-           stat = "count") + 
-  geom_text(stat = "count", 
-            aes(y = after_stat(count) / total_trips * 100, 
-                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
-            position = position_dodge(width = 0.9), 
-            vjust = -0.25) + 
-  labs(title = "Mode Distribution",
-       y = "Percentage",
-       fill = "Scenario") +
-#  scale_y_continuous(limits = c(0, 50)) +  
-  theme_minimal() +
+trips_percentage <- trips %>%
+  group_by(LAD_origin, scenario) %>%
+  mutate(total_trips = n()) %>%
+  ungroup() %>% 
+  group_by(LAD_origin, mode, scenario) %>%
+  summarise(trip_count = n(), total_trips = first(total_trips), .groups = 'drop') %>%
+  mutate(percentage_of_trips = (trip_count / total_trips) * 100)
+
+trips_percentage_all <- trips_percentage %>%
+  group_by(mode, scenario) %>%
+  summarise(trip_count = mean(trip_count),
+            total_trips = mean(total_trips),
+            percentage_of_trips = (trip_count / total_trips) * 100, .groups = 'drop') %>%
+  mutate(LAD_origin = "All Locations")
+
+trips_percentage_combined <- bind_rows(trips_percentage, trips_percentage_all)
+
+write.csv(trips_percentage_combined, "data/original/viz/trips_mode_share.csv")
+
+ggplot(trips_percentage_combined, aes(x = mode, y = percentage_of_trips, fill = scenario)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_text(aes(label = paste0(round(percentage_of_trips, 1), "%"),
+    y = percentage_of_trips),
+    position = position_dodge(width = 0.9), 
+    vjust = -0.25) +
+  labs(
+    title = "Percentage of trips by transport mode and location",
+    fill = "Scenario") +
+  theme_minimal(base_size = 16) +
   theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
+        panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
-        plot.title = element_text(hjust = 0.5))
+        plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.text = element_text(face = "bold"),
+        strip.placement = "outside", 
+        strip.text = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")) +
+  facet_wrap(~ LAD_origin, 
+             scales = "free_x")
 
-# Distribution of trips by mode and gender
+# By IMD
 
-ggplot(trips, aes(x = mode, fill = gender)) +
-  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
-           position = "dodge", 
-           stat = "count") + 
-  geom_text(stat = "count", 
-            aes(y = after_stat(count) / total_trips * 100, 
-                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
+trips_percentage_imd <- trips %>%
+  group_by(imd_origin, scenario) %>%
+  mutate(total_trips = n()) %>%
+  ungroup() %>% 
+  group_by(imd_origin, mode, scenario) %>%
+  summarise(trip_count = n(), total_trips = first(total_trips), .groups = 'drop') %>%
+  mutate(percentage_of_trips = (trip_count / total_trips) * 100)
+
+trips_percentage_imd$imd_origin <- as.factor(trips_percentage_imd$imd_origin) 
+
+trips_percentage_all_imd <- trips_percentage_imd %>%
+  group_by(mode, scenario) %>%
+  summarise(trip_count = mean(trip_count),
+            total_trips = mean(total_trips),
+            percentage_of_trips = (trip_count / total_trips) * 100, .groups = 'drop') %>%
+  mutate(imd_origin = "All IMDs")
+
+trips_percentage_combined_imd <- bind_rows(trips_percentage_all_imd,trips_percentage_imd)
+
+trips_percentage_combined_imd$imd <- factor(trips_percentage_combined_imd$imd_origin,
+  levels = c("All IMDs", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"),
+  labels = c("All IMDs", "Most Deprived", "2", "3", "4", "5", "6", "7", "8", "9", "Least Deprived"))
+
+write.csv(trips_percentage_combined_imd, "data/original/viz/trips_mode_share_imd.csv")
+
+ggplot(trips_percentage_combined_imd, aes(x = mode, y = percentage_of_trips, fill = scenario)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_text(aes(label = paste0(round(percentage_of_trips, 1), "%"),
+                y = percentage_of_trips),
             position = position_dodge(width = 0.9), 
-            vjust = -0.25) + 
-  labs(title = "Mode Distribution by Gender",
-       fill = "Gender") +
-  theme_minimal() +
+            vjust = -0.25) +
+  labs(
+    title = "Percentage of trips by transport mode and index of multiple deprivation (IMD)",
+    fill = "Scenario") +
+  theme_minimal(base_size = 16) +
   theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
+        panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
         axis.title.y = element_blank(),
-        plot.title = element_text(hjust = 0.5))
-
-# By Occupation
-ggplot(trips, aes(x = mode, fill = t.purpose)) +
-  geom_bar(aes(y = after_stat(count) / total_trips * 100), 
-           position = "dodge", 
-           stat = "count") + 
-  geom_text(stat = "count", 
-            aes(y = after_stat(count) / total_trips * 100, 
-                label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
-            position = position_dodge(width = 0.9), 
-            vjust = -0.25) + 
-  labs(title = "Mode Distribution by Purpose of Trip",
-       fill = "Purpose") +
-  theme_minimal() +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        plot.title = element_text(hjust = 0.5))
+        plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.text = element_text(face = "bold"),
+        strip.placement = "outside", 
+        strip.text = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")) +
+  facet_wrap(~ imd, 
+             scales = "free_x")
 
 # Average weekly distance by mode of transportation
 
 avg_distance <- trips %>%
-  group_by(mode, scenario) %>%
-  summarize(avg_distance = mean(distance, na.rm = TRUE)) %>%
-  ungroup()
+  group_by(p.ID, mode, LAD_origin, scenario) %>%
+  summarise(total_distance = sum(distance, na.rm = TRUE), .groups = "drop") %>% 
+  group_by(mode, LAD_origin, scenario) %>%
+  summarise(avg_distance = mean(total_distance, na.rm = TRUE), .groups = "drop")
 
-ggplot(avg_distance, aes(x = mode, fill = scenario)) +
-  geom_bar(aes(y = avg_distance),
-           stat = "identity", 
-           position = "dodge") +
-  geom_text(aes(y = avg_distance, 
-                label = round(avg_distance, 1)), 
+avg_distance_all <- avg_distance %>%
+  group_by(mode, scenario) %>%
+  summarise(avg_distance = mean(avg_distance, na.rm = TRUE), .groups = "drop") %>% 
+  mutate(LAD_origin = "All Locations")
+
+avg_distance_combined <- bind_rows(avg_distance,avg_distance_all)
+
+write.csv(avg_distance_combined, "data/original/viz/trips_distance.csv")
+
+ggplot(avg_distance_combined, aes(x = mode, y = avg_distance, fill = scenario)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_text(aes(label = paste0(round(avg_distance, 1), "km"),
+                y = avg_distance),
             position = position_dodge(width = 0.9), 
             vjust = -0.25) +
-  labs(title = "Average Weekly Distance by Mode of Transportation",
-       x = "Mode of Transportation",
-       y = "Average Distance (km)",
+  labs(title = "Average Weekly Distance Travelled per Person, by Transport Mode and Location",
        fill = "Scenario") +
-  theme_minimal() +
+  theme_minimal(base_size = 16) +
   theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
+        panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
-        plot.title = element_text(hjust = 0.5))
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.text = element_text(face = "bold"),
+        strip.placement = "outside", 
+        strip.text = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")) +
+  facet_wrap(~ LAD_origin, 
+             scales = "free_x")
+
+# Average time spent per person, by transport mode and location
+
+avg_time <- trips %>%
+  group_by(p.ID, mode, LAD_origin, scenario) %>%
+  summarise(total_time = sum(time, na.rm = TRUE), .groups = "drop") %>% 
+  group_by(mode, LAD_origin, scenario) %>%
+  summarise(avg_time = mean(total_time, na.rm = TRUE), .groups = "drop")
+
+avg_time_all <- avg_time %>%
+  group_by(mode, scenario) %>%
+  summarise(avg_time = mean(avg_time, na.rm = TRUE), .groups = "drop") %>% 
+  mutate(LAD_origin = "All Locations")
+
+avg_time_combined <- bind_rows(avg_time, avg_time_all)
+
+write.csv(avg_time_combined, "data/original/viz/trips_time.csv")
+
+ggplot(avg_time_combined, aes(x = mode, y = avg_time, fill = scenario)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_text(aes(label = paste0(round(avg_time, 1), "h"),
+                y = avg_time),
+            position = position_dodge(width = 0.9), 
+            vjust = -0.25) +
+  labs(title = "Average Weekly Time Spent on Each Transport Mode per Person by Location",
+    fill = "Scenario") +
+  theme_minimal(base_size = 16) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.text = element_text(face = "bold"),
+        strip.placement = "outside", 
+        strip.text = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")) +
+  facet_wrap(~ LAD_origin, 
+             scales = "free_x")
+
+# Percentage Difference 
+
+avg_time_pct_diff <- avg_time_combined %>%
+  pivot_wider(names_from = scenario, values_from = avg_time) %>%
+  mutate(difference = `Cycling intervention` - Reference) %>%
+  select(mode, LAD_origin, difference)
+
+# Plot percentage difference
+ggplot(avg_time_pct_diff, aes(x = mode, y = difference, fill = mode)) +
+  geom_bar(stat = "identity", position = position_dodge()) +
+  geom_text(aes(label = paste0(round(difference, 1), "%"),
+                y = difference),
+            position = position_dodge(width = 0.9), 
+            vjust = -0.25) +
+  labs(title = "Percentage Difference in Weekly Time Spent per Transport Mode\nCycling Intervention vs. Reference",
+       fill = "Mode") +
+  theme_minimal(base_size = 16) +
+  theme(panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        plot.title = element_text(hjust = 0.5, face = "bold"), 
+        axis.text = element_text(face = "bold"),
+        strip.placement = "outside", 
+        strip.text = element_text(face = "bold"),
+        legend.text = element_text(face = "bold"),
+        legend.title = element_text(face = "bold")) +
+  facet_wrap(~ LAD_origin, scales = "free_x")
 
 ```
-
