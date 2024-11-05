@@ -23,14 +23,6 @@ trips_ref <- read_csv("simulationResults/ForUrbanTransition/reference/travel_dem
 trips_cint <- read_csv("simulationResults/ForUrbanTransition/cycleIntervention/travel_demand_mito/trips.csv")
 
 pp <- read_csv("synpop/sp_2021/pp_2021.csv")
-
-
-zone <- read_csv("~/models/manchester/input/zoneSystem.csv")
-trips_ref <- read_csv("~/models/manchester/scenOutput/silo_mito_matsim_base_UT/2021/microData/trips.csv")
-
-trips_cint <- read_csv("~/models/manchester/scenOutput/silo_mito_matsim_cycleIntervention_UT/2021/microData/trips.csv")
-
-pp <- read_csv("~/models/manchester/microData/pp_2021.csv")
 ```
 
 ## Data Preparation
@@ -111,9 +103,7 @@ trips <- trips %>%
 
 ################### write out into Parquet file ########################
 
-arrow::write_dataset(trips,path="simulationResults/ForUrbanTransition/trips_vis",format="parquet")
-
-arrow::write_dataset(trips,path="~/models/rscripts/trips-vis/",format="parquet")
+arrow::write_dataset(trips,path="simulationResults/ForUrbanTransition/visualization",format="parquet")
 ```
 
 ## Creating Visualizations
