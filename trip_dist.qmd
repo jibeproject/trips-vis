@@ -16,13 +16,21 @@ require(stringr)
 
 # Change the path as needed, currently set to Manchester folder
 
-zone <- st_read("synpop/sp_2021/OA_2021_MCR.shp")
+zone <- read_csv("synpop/sp_2021/zoneSystem.csv")
 
-trips_ref <- read.csv("simulationResults/ForUrbanTransition/reference/travel_demand_mito/trips.csv")
+trips_ref <- read_csv("simulationResults/ForUrbanTransition/reference/travel_demand_mito/trips.csv")
 
-trips_cint <- read.csv("simulationResults/ForUrbanTransition/cycleIntervention/travel_demand_mito/trips.csv")
+trips_cint <- read_csv("simulationResults/ForUrbanTransition/cycleIntervention/travel_demand_mito/trips.csv")
 
-pp <- read.csv("synpop/sp_2021/pp_2021.csv")
+pp <- read_csv("synpop/sp_2021/pp_2021.csv")
+
+
+zone <- read_csv("~/models/manchester/input/zoneSystem.csv")
+trips_ref <- read_csv("~/models/manchester/scenOutput/silo_mito_matsim_base_UT/2021/microData/trips.csv")
+
+trips_cint <- read_csv("~/models/manchester/scenOutput/silo_mito_matsim_cycleIntervention_UT/2021/microData/trips.csv")
+
+pp <- read_csv("~/models/manchester/microData/pp_2021.csv")
 ```
 
 ## Data Preparation
@@ -32,28 +40,30 @@ pp <- read.csv("synpop/sp_2021/pp_2021.csv")
 ################### Adding Zone and Demographics ########################
 
 trips_ref <- trips_ref %>% 
+  select(hh.id,p.ID,t.id,origin,destination,t.purpose,t.distance_auto,t.distance_walk,t.distance_bike,time_auto,time_pt,mode)%>%
   mutate(scenario = "Reference")
 
 trips_cint <- trips_cint %>% 
+  select(hh.id,p.ID,t.id,origin,destination,t.purpose,t.distance_auto,t.distance_walk,t.distance_bike,time_auto,time_pt,mode)%>%
   mutate(scenario = "Cycling intervention")
 
 trips <- bind_rows(trips_ref, trips_cint)
 
-################### Adding Zone and Demographics ########################
+rm(trips_ref,trips_cint)
+################### Adding Zone, IMD and Demographics ########################
 
 trips <- trips %>% 
   left_join(zone %>% 
-              select(location_origin = LSOA21NM,id) %>% 
-              st_drop_geometry(),
-            by = c("origin" = "id")) %>% 
+              select(LAD_origin = ladnm,imd_origin = imd10, oaID),
+            by = c("origin" = "oaID")) %>% 
   left_join(zone %>% 
-              select(location_destination = LSOA21NM,id) %>% 
-              st_drop_geometry(),
-            by = c("destination" = "id")) %>% 
-  left_join(pp, by = c("p.ID" = "id")) %>% 
-  mutate(location_origin = word(location_origin, 1),
-         location_destination = word(location_destination, 1),
-         gender = factor(gender,
+              select(LAD_destination = ladnm, imd_destination = imd10, oaID),
+            by = c("destination" = "oaID")) %>% 
+  left_join(pp%>%
+              select(id,age,gender,occupation), by = c("p.ID" = "id")) 
+
+trips <- trips %>% 
+  mutate(gender = factor(gender,
                          levels = c(1,2),
                          labels = c("Male","Female")),
          occupation = factor(occupation,
@@ -96,9 +106,14 @@ trips <- trips %>%
                                                   "Non-home-based-other", 
                                                   "Non-home-based-work")),
          time_walk = t.distance_walk/2.92,
-         time_bike = t.distance_bike/10.44) %>% 
-  select(-schoolId, -workplace)
+         time_bike = t.distance_bike/10.44) 
 
+
+################### write out into Parquet file ########################
+
+arrow::write_dataset(trips,path="simulationResults/ForUrbanTransition/trips_vis",format="parquet")
+
+arrow::write_dataset(trips,path="~/models/rscripts/trips-vis/",format="parquet")
 ```
 
 ## Creating Visualizations
