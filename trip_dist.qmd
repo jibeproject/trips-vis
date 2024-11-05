@@ -29,14 +29,6 @@ pp <- read.csv("synpop/sp_2021/pp_2021.csv")
 
 ```{r}
 
-trips_ref <- trips_ref %>% 
-  mutate(scenario = "Reference")
-
-trips_cint <- trips_cint %>% 
-  mutate(scenario = "Cycling intervention")
-
-trips <- bind_rows(trips_ref, trips_cint)
-
 ################### Adding Zone and Demographics ########################
 
 trips_ref <- trips_ref %>% 
