@@ -57,7 +57,9 @@ trips <- trips %>%
 rm(pp, zone)
 
 trips <- trips %>% 
-  mutate(gender = factor(gender,
+  mutate(time_walk = t.distance_walk/2.92,
+         time_bike = t.distance_bike/10.44,
+         gender = factor(gender,
                          levels = c(1,2),
                          labels = c("Male","Female")),
          occupation = factor(occupation,
@@ -107,8 +109,6 @@ trips <- trips %>%
                                                   "Non-home-based-work")),
          scenario = factor(scenario, levels = c("Reference",
                                                  "Cycling intervention")),
-         time_walk = t.distance_walk/2.92,
-         time_bike = t.distance_bike/10.44,
          time_pt = as.numeric(time_pt))
 
 ################### write out into Parquet file ########################
