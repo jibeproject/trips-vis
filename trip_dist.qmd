@@ -39,6 +39,16 @@ trips <- bind_rows(trips_ref, trips_cint)
 
 ################### Adding Zone and Demographics ########################
 
+trips_ref <- trips_ref %>% 
+  mutate(scenario = "Reference")
+
+trips_cint <- trips_cint %>% 
+  mutate(scenario = "Cycling intervention")
+
+trips <- bind_rows(trips_ref, trips_cint)
+
+################### Adding Zone and Demographics ########################
+
 trips <- trips %>% 
   left_join(zone %>% 
               select(location_origin = LSOA21NM,id) %>% 
@@ -68,7 +78,33 @@ trips <- trips %>%
            mode == "pt" ~ "Public Transport",
            mode == "walk" ~ "Walking",
            mode == "bicycle" ~ "Cycling",
-           TRUE ~ "Other")) %>% 
+           TRUE ~ "Other"),
+         t.purpose = case_when(
+             t.purpose == "HBW" ~ "Home-based-work",
+             t.purpose == "HBE" ~ "Home-based-education",
+             t.purpose == "HBA" ~ "Home-based-accompanying",
+             t.purpose == "HBS" ~ "Home-based-shopping",
+             t.purpose == "HBR" ~ "Home-based-recreation",
+             t.purpose == "HBO" ~ "Home-based-other",
+             t.purpose == "NHBO" ~ "Non-home-based-other",
+             t.purpose == "NHBW" ~ "Non-home-based-work",
+             TRUE ~ NA_character_),
+         mode = factor(mode, levels = c("Driving Car", 
+                                        "Car Passenger", 
+                                        "Public Transport", 
+                                        "Walking", 
+                                        "Cycling", 
+                                        "Other")),
+         t.purpose = factor(t.purpose, levels = c("Home-based-work", 
+                                                  "Home-based-education", 
+                                                  "Home-based-accompanying", 
+                                                  "Home-based-shopping", 
+                                                  "Home-based-recreation", 
+                                                  "Home-based-other", 
+                                                  "Non-home-based-other", 
+                                                  "Non-home-based-work")),
+         time_walk = t.distance_walk/2.92,
+         time_bike = t.distance_bike/10.44) %>% 
   select(-schoolId, -workplace)
 
 ```
@@ -124,6 +160,7 @@ ggplot(trips, aes(x = mode, fill = scenario)) +
   labs(title = "Mode Distribution",
        y = "Percentage",
        fill = "Scenario") +
+#  scale_y_continuous(limits = c(0, 50)) +  
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
@@ -152,7 +189,7 @@ ggplot(trips, aes(x = mode, fill = gender)) +
         plot.title = element_text(hjust = 0.5))
 
 # By Occupation
-ggplot(trips, aes(x = mode, fill = occupation)) +
+ggplot(trips, aes(x = mode, fill = t.purpose)) +
   geom_bar(aes(y = after_stat(count) / total_trips * 100), 
            position = "dodge", 
            stat = "count") + 
@@ -161,8 +198,8 @@ ggplot(trips, aes(x = mode, fill = occupation)) +
                 label = paste0(round(after_stat(count) / total_trips * 100, 1), "%")),
             position = position_dodge(width = 0.9), 
             vjust = -0.25) + 
-  labs(title = "Mode Distribution by Occupation",
-       fill = "Occupation") +
+  labs(title = "Mode Distribution by Purpose of Trip",
+       fill = "Purpose") +
   theme_minimal() +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
