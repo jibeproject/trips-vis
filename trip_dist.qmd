@@ -29,53 +29,36 @@ pp <- read_csv("synpop/sp_2021/pp_2021.csv")
 
 ```{r}
 
-################### Adding Zone and Demographics ########################
+################### Data Preparation ########################
 
 trips_ref <- trips_ref %>% 
-  select(hh.id,p.ID,t.id,origin,destination,t.purpose,t.distance_auto,t.distance_walk,t.distance_bike,time_auto,time_pt,mode)%>%
   mutate(scenario = "Reference")
 
 trips_cint <- trips_cint %>% 
-  select(hh.id,p.ID,t.id,origin,destination,t.purpose,t.distance_auto,t.distance_walk,t.distance_bike,time_auto,time_pt,mode)%>%
-  mutate(scenario = "Cycling intervention")
+  mutate(scenario = "Cycling Intervention")
 
 trips <- bind_rows(trips_ref, trips_cint)
 
-rm(trips_ref,trips_cint)
-################### Adding Zone, IMD and Demographics ########################
+rm(trips_ref, trips_cint)
+
+################### Adding Zone and Demographics ########################
 
 trips <- trips %>% 
   left_join(zone %>% 
               select(LAD_origin = ladnm,imd_origin = imd10, oaID),
             by = c("origin" = "oaID")) %>% 
-  left_join(zone %>% 
-              select(LAD_destination = ladnm, imd_destination = imd10, oaID),
-            by = c("destination" = "oaID")) %>% 
   left_join(pp%>%
-              select(id,age,gender,occupation), by = c("p.ID" = "id")) 
+              select(id,age,gender,occupation), by = c("p.ID" = "id"))
 
 rm(pp, zone)
 
 trips <- trips %>% 
+  select(p.ID,t.distance_walk,t.distance_bike,t.distance_auto,t.distance_auto,time_auto,time_pt,mode,scenario,LAD_origin, imd_origin) %>% 
   mutate(time_walk = t.distance_walk/2.92,
          time_bike = t.distance_bike/10.44,
-         gender = factor(gender,
-                         levels = c(1,2),
-                         labels = c("Male","Female")),
-         occupation = factor(occupation,
-                             levels = c(0, 1, 2, 3, 4),
-                             labels = c("Toddler", "Employed", "Unemployed", "Student", "Retiree")),
-         distance = case_when(
-           mode %in% c("autoDriver", "autoPassenger", "pt") ~ t.distance_auto,
-           mode == "walk" ~ t.distance_walk,
-           mode == "bicycle" ~ t.distance_bike,
-           TRUE ~ NA_real_),
-         time = case_when(
-           mode %in% c("autoDriver", "autoPassenger") ~ time_auto,
-           mode == "pt" ~ time_pt,
-           mode == "walk" ~ time_walk,
-           mode == "bicycle" ~ time_bike,
-           TRUE ~ NA_real_),
+         time_pt = as.numeric(time_pt),
+         time_auto = time_auto/60,
+         time_pt = time_pt/60,
          mode = case_when(
            mode == "autoDriver" ~ "Driving Car",
            mode == "autoPassenger" ~ "Car Passenger",
@@ -83,33 +66,14 @@ trips <- trips %>%
            mode == "walk" ~ "Walking",
            mode == "bicycle" ~ "Cycling",
            TRUE ~ "Other"),
-         t.purpose = case_when(
-           t.purpose == "HBW" ~ "Home-based-work",
-           t.purpose == "HBE" ~ "Home-based-education",
-           t.purpose == "HBA" ~ "Home-based-accompanying",
-           t.purpose == "HBS" ~ "Home-based-shopping",
-           t.purpose == "HBR" ~ "Home-based-recreation",
-           t.purpose == "HBO" ~ "Home-based-other",
-           t.purpose == "NHBO" ~ "Non-home-based-other",
-           t.purpose == "NHBW" ~ "Non-home-based-work",
-           TRUE ~ NA_character_),
          mode = factor(mode, levels = c("Driving Car", 
                                         "Car Passenger", 
                                         "Public Transport", 
                                         "Walking", 
                                         "Cycling", 
                                         "Other")),
-         t.purpose = factor(t.purpose, levels = c("Home-based-work", 
-                                                  "Home-based-education", 
-                                                  "Home-based-accompanying", 
-                                                  "Home-based-shopping", 
-                                                  "Home-based-recreation", 
-                                                  "Home-based-other", 
-                                                  "Non-home-based-other", 
-                                                  "Non-home-based-work")),
          scenario = factor(scenario, levels = c("Reference",
-                                                 "Cycling intervention")),
-         time_pt = as.numeric(time_pt))
+                                                "Cycling Intervention")))
 
 ################### write out into Parquet file ########################
 
@@ -249,30 +213,44 @@ ggplot(trips_percentage_combined_imd, aes(x = mode, y = percentage_of_trips, fil
 
 # Average weekly distance by mode of transportation
 
-avg_distance <- trips %>%
-  group_by(p.ID, mode, LAD_origin, scenario) %>%
-  summarise(total_distance = sum(distance, na.rm = TRUE), .groups = "drop") %>% 
-  group_by(mode, LAD_origin, scenario) %>%
-  summarise(avg_distance = mean(total_distance, na.rm = TRUE), .groups = "drop")
+pp=trips%>%
+  group_by(p.ID, LAD_origin, scenario)%>%
+  summarise(Cycling=sum(t.distance_bike[mode=="Cycling"]),
+                                    Walking=sum(t.distance_walk[mode=="Walking"]),
+            `Public Transport`=sum(t.distance_auto[mode=="Public Transport"]),
+            `Driving Car`=sum(t.distance_auto[mode=="Driving Car"]),
+            `Car Passenger`=sum(t.distance_auto[mode=="Car Passenger"]))
 
-avg_distance_all <- avg_distance %>%
-  group_by(mode, scenario) %>%
-  summarise(avg_distance = mean(avg_distance, na.rm = TRUE), .groups = "drop") %>% 
+pp=pp%>%gather(mode,dist,Cycling:`Car Passenger`)
+
+summary_distance=pp%>%
+  group_by(mode, LAD_origin, scenario)%>%
+  summarise(avgDistance=mean(dist))
+
+pp_all=trips%>%
+  group_by(p.ID, scenario)%>%
+  summarise(Cycling=sum(t.distance_bike[mode=="Cycling"]),
+            Walking=sum(t.distance_walk[mode=="Walking"]),
+            `Public Transport`=sum(t.distance_auto[mode=="Public Transport"]),
+            `Driving Car`=sum(t.distance_auto[mode=="Driving Car"]),
+            `Car Passenger`=sum(t.distance_auto[mode=="Car Passenger"]))
+
+pp_all=pp_all%>%gather(mode,dist,Cycling:`Car Passenger`)
+
+summary_distance_all=pp_all%>%group_by(mode, scenario)%>%summarise(avgDistance=mean(dist)) %>% 
   mutate(LAD_origin = "All Locations")
 
-avg_distance_combined <- bind_rows(avg_distance,avg_distance_all)
+combined_distance <- bind_rows(summary_distance,summary_distance_all) 
 
-write.csv(avg_distance_combined, "data/original/viz/trips_distance.csv")
-
-ggplot(avg_distance_combined, aes(x = mode, y = avg_distance, fill = scenario)) +
+ggplot(combined_distance, aes(x = mode, y = avgDistance, fill = scenario)) +
   geom_bar(stat = "identity", position = position_dodge()) +
-  geom_text(aes(label = paste0(round(avg_distance, 1), "km"),
-                y = avg_distance),
+  geom_text(aes(label = paste0(round(avgDistance, 1), "km"),
+                y = avgDistance),
             position = position_dodge(width = 0.9), 
             vjust = -0.25) +
-  labs(title = "Average Weekly Distance Travelled per Person, by Transport Mode and Location",
+  labs(title = "Average Weekly Distance Travelled per Person by Transport Mode and Location",
        fill = "Scenario") +
-  theme_minimal(base_size = 16) +
+  theme_minimal(base_size = 14) +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
@@ -282,36 +260,52 @@ ggplot(avg_distance_combined, aes(x = mode, y = avg_distance, fill = scenario)) 
         strip.placement = "outside", 
         strip.text = element_text(face = "bold"),
         legend.text = element_text(face = "bold"),
-        legend.title = element_text(face = "bold")) +
+        legend.title = element_text(face = "bold"))+
   facet_wrap(~ LAD_origin, 
              scales = "free_x")
 
 # Average time spent per person, by transport mode and location
 
-avg_time <- trips %>%
-  group_by(p.ID, mode, LAD_origin, scenario) %>%
-  summarise(total_time = sum(time, na.rm = TRUE), .groups = "drop") %>% 
-  group_by(mode, LAD_origin, scenario) %>%
-  summarise(avg_time = mean(total_time, na.rm = TRUE), .groups = "drop")
+tt=trips%>%
+  group_by(p.ID, LAD_origin, scenario)%>%
+  summarise(Cycling=sum(time_bike[mode=="Cycling"]),
+            Walking=sum(time_walk[mode=="Walking"]),
+            `Public Transport`=sum(time_pt[mode=="Public Transport"]),
+            `Driving Car`=sum(time_auto[mode=="Driving Car"]),
+            `Car Passenger`=sum(time_auto[mode=="Car Passenger"]))
 
-avg_time_all <- avg_time %>%
-  group_by(mode, scenario) %>%
-  summarise(avg_time = mean(avg_time, na.rm = TRUE), .groups = "drop") %>% 
+tt=tt%>%gather(mode,time,Cycling:`Car Passenger`)
+
+summary_time=tt%>%
+  group_by(mode, LAD_origin, scenario)%>%
+  summarise(avgTime=mean(time))
+
+tt_all=trips%>%
+  group_by(p.ID, scenario)%>%
+  summarise(Cycling=sum(time_bike[mode=="Cycling"]),
+            Walking=sum(time_walk[mode=="Walking"]),
+            `Public Transport`=sum(time_pt[mode=="Public Transport"]),
+            `Driving Car`=sum(time_auto[mode=="Driving Car"]),
+            `Car Passenger`=sum(time_auto[mode=="Car Passenger"]))
+
+tt_all=tt_all%>%gather(mode,time,Cycling:`Car Passenger`)
+
+summary_time_all=tt_all%>%
+  group_by(mode, scenario)%>%
+  summarise(avgTime=mean(time)) %>% 
   mutate(LAD_origin = "All Locations")
 
-avg_time_combined <- bind_rows(avg_time, avg_time_all)
+avg_time_combined <- bind_rows(summary_time, summary_time_all) 
 
-write.csv(avg_time_combined, "data/original/viz/trips_time.csv")
-
-ggplot(avg_time_combined, aes(x = mode, y = avg_time, fill = scenario)) +
+ggplot(avg_time_combined, aes(x = mode, y = avgTime, fill = scenario)) +
   geom_bar(stat = "identity", position = position_dodge()) +
-  geom_text(aes(label = paste0(round(avg_time, 1), "h"),
-                y = avg_time),
+  geom_text(aes(label = paste0(round(avgTime, 1), "h"),
+                y = avgTime),
             position = position_dodge(width = 0.9), 
             vjust = -0.25) +
   labs(title = "Average Weekly Time Spent on Each Transport Mode per Person by Location",
-    fill = "Scenario") +
-  theme_minimal(base_size = 16) +
+       fill = "Scenario") +
+  theme_minimal(base_size = 14) +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(), 
         axis.title.x = element_blank(),
@@ -324,34 +318,5 @@ ggplot(avg_time_combined, aes(x = mode, y = avg_time, fill = scenario)) +
         legend.title = element_text(face = "bold")) +
   facet_wrap(~ LAD_origin, 
              scales = "free_x")
-
-# Percentage Difference 
-
-avg_time_pct_diff <- avg_time_combined %>%
-  pivot_wider(names_from = scenario, values_from = avg_time) %>%
-  mutate(difference = `Cycling intervention` - Reference) %>%
-  select(mode, LAD_origin, difference)
-
-# Plot percentage difference
-ggplot(avg_time_pct_diff, aes(x = mode, y = difference, fill = mode)) +
-  geom_bar(stat = "identity", position = position_dodge()) +
-  geom_text(aes(label = paste0(round(difference, 1), "%"),
-                y = difference),
-            position = position_dodge(width = 0.9), 
-            vjust = -0.25) +
-  labs(title = "Percentage Difference in Weekly Time Spent per Transport Mode\nCycling Intervention vs. Reference",
-       fill = "Mode") +
-  theme_minimal(base_size = 16) +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(), 
-        axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        plot.title = element_text(hjust = 0.5, face = "bold"), 
-        axis.text = element_text(face = "bold"),
-        strip.placement = "outside", 
-        strip.text = element_text(face = "bold"),
-        legend.text = element_text(face = "bold"),
-        legend.title = element_text(face = "bold")) +
-  facet_wrap(~ LAD_origin, scales = "free_x")
 
 ```
