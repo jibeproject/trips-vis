@@ -24,7 +24,7 @@ require(plotly)
 require(here)
 
 # Set it to your local directory pointing to the General folder
-per_dir_path <- ""
+per_dir_path <- "D:/Users/aa797/RMIT University/"
 
 trips <- trips <- arrow::open_dataset(here(per_dir_path, "JIBE working group - General/manchester/simulationResults/ForUrbanTransition/visualization/trips.parquet"))
 
@@ -172,9 +172,15 @@ pp=trips%>% to_duckdb() |>
 
 pp=pp%>%gather(mode,dist,Cycling:`Car Passenger`)
 
-summary_distance=pp%>%
-  group_by(mode, LAD_origin, scenario)%>%
-  summarise(avgDistance=mean(dist, na.rm = T))
+pop_lad <- trips |> to_duckdb() |> distinct(p.ID, LAD_origin) |> group_by(LAD_origin) |> summarise(pop = n())
+
+tot_pop <- pop_lad |> dplyr::select(pop) |> pull() |> sum()
+
+summary_distance <- pp |>  
+  filter(!is.na(dist)) |> 
+  left_join(pop_lad, copy = T) |> 
+  group_by(mode, LAD_origin, scenario) |> 
+  summarise(avgDistance = round(sum(dist) / first(pop), 1))
 
 pp_all=trips%>% to_duckdb() |> 
   group_by(p.ID, scenario)%>%
@@ -184,10 +190,13 @@ pp_all=trips%>% to_duckdb() |>
             `Driving Car`=sum(t.distance_auto[mode=="Driving Car"]),
             `Car Passenger`=sum(t.distance_auto[mode=="Car Passenger"])) |> collect()
 
-pp_all=pp_all%>%gather(mode,dist,Cycling:`Car Passenger`)
+pp_all <- pp_all%>%gather(mode,dist,Cycling:`Car Passenger`)
 
-summary_distance_all=pp_all%>%group_by(mode, scenario)%>%summarise(avgDistance=mean(dist, na.rm = T)) %>% 
-  mutate(LAD_origin = "All Locations")
+summary_distance_all <- pp_all |> 
+    filter(!is.na(dist)) |> 
+    group_by(mode, scenario) |>  
+    summarise(avgDistance = round(sum(dist, na.rm = T) / tot_pop, 1)) |>  
+    mutate(LAD_origin = "All Locations")
 
 combined_distance <- bind_rows(summary_distance,summary_distance_all) 
 
@@ -211,6 +220,7 @@ ggplotly(
 )
 
 ```
+
 
 # Average time spent per person by mode and location
 ```{r}
