@@ -1,0 +1,552 @@
+---
+title: "trip_validation"
+author: "Marina_Qin"
+date: "2024-12-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(data.table)
+library(gt)
+
+rm(list=ls())
+```
+
+## Load baseline trips.csv and TRADS trips
+```{r load files, message=FALSE}
+trips_ref <- fread('data/trips.csv')
+
+trips_trads <- fread("data/tripsForValidation.csv")
+
+pp_trads <- fread("data/personForValidation.csv")
+
+pp_ref <- fread("data/pp_2021.csv")
+
+```
+
+## Data Preparation
+Note that 
+1. For baseline data, home-based trips and RRT are factored/weighted by 2
+
+2. Since TRADS is a one-day diary, all trips are factored/weighted by 7 
+
+3. To be consistent with trip-based model, return trips (e.g. work to home) are dropped from TRADS. Therefore, home-based trips and RRT in TRADS are also factored/weighted by 2
+
+4. Trips that either origin or destination outside Greater Manchester Boundary are dropped from TRADS dataset
+
+5. TRADS does not include kids under 5 years old
+```{r data prep, message=FALSE}
+trips_ref <- trips_ref %>% 
+  mutate(scenario = "Baseline")
+
+trips_ref <- trips_ref %>% 
+  mutate(mode = case_when(
+           mode == "autoDriver" ~ "Driving Car",
+           mode == "autoPassenger" ~ "Car Passenger",
+           mode == "pt" ~ "Public Transport",
+           mode == "walk" ~ "Walking",
+           mode == "bicycle" ~ "Cycling",
+           TRUE ~ "Other"),
+         t.factor = if_else(t.purpose %in% c("HBW", 
+                                           "HBE", 
+                                           "HBA", 
+                                           "HBS", 
+                                           "HBR", 
+                                           "HBO",
+                                           "RRT"), 2,1),
+         time_walk = time_walk/60,
+         time_bike = time_bike/60,
+         time_auto = time_auto/60,
+         time_pt = time_pt/60,
+         time = case_when(mode=="Cycling"~time_bike,
+                          mode=="Walking"~time_walk,
+                          mode=="Public Transport"~time_pt,
+                          mode=="Driving Car"~time_auto,
+                          mode=="Car Passenger"~time_auto),
+         dist = case_when(mode=="Cycling"~t.distance_bike,
+                          mode=="Walking"~t.distance_walk,
+                          mode=="Public Transport"~t.distance_auto,
+                          mode=="Driving Car"~t.distance_auto,
+                          mode=="Car Passenger"~t.distance_auto),
+         time_factored = time * t.factor,
+         dist_factored = dist * t.factor,
+         t.weight = 1,
+         p.weight = 1)%>%
+  select(p.ID,t.purpose,time,time_factored,dist,dist_factored,mode,scenario,t.factor,t.weight,p.weight)
+
+pp_ref_over5 = pp_ref%>%filter(age>=5)%>%filter(age>=5)
+trips_ref_over5 = trips_ref %>% filter(p.ID%in%pp_ref_over5$id)
+trips_ref_over5 = trips_ref_over5%>%mutate(scenario = "Baseline_over5")
+trips_trads <- trips_trads %>% 
+  mutate(scenario = "TRADS")
+
+trips_trads <- trips_trads %>% 
+  filter(!t.purpose%in%c("NA","business","unknown"))%>%
+  mutate(mode = case_when(
+           t.m_main == "Car or van driver" ~ "Driving Car",
+           t.m_main == "Car or van passenger" ~ "Car Passenger",
+           t.m_main %in%c("Bus, minibus, coach","Metrolink", "Train") ~ "Public Transport",
+           t.m_main == "Walk" ~ "Walking",
+           t.m_main == "Bicycle" ~ "Cycling",
+           TRUE ~ "Other"),
+         t.factor = if_else(t.purpose %in% c("HBW", 
+                                           "HBE", 
+                                           "HBA", 
+                                           "HBS", 
+                                           "HBR", 
+                                           "HBO",
+                                           "RRT"), 2*7,1*7),
+         time = case_when(mode=="Cycling"~bike_fast_time/3600,
+                          mode=="Walking"~walk_fast_time/3600,
+                          mode=="Public Transport"~pt_time/3600,
+                          mode=="Driving Car"~car_congested_time/3600,
+                          mode=="Car Passenger"~car_congested_time/3600),
+         dist = case_when(mode=="Cycling"~bike_fast_dist/1000,
+                          mode=="Walking"~walk_fast_dist/1000,
+                          mode=="Public Transport"~pt_dist/1000,
+                          mode=="Driving Car"~car_congested_dist/1000,
+                          mode=="Car Passenger"~car_congested_dist/1000),
+         time_factored = time * t.factor,
+         dist_factored = dist * t.factor,
+         t.weight = t.expansionFactor_all,
+         p.weight = hh.expansionFactor)%>%
+  filter(!mode%in%c("Other"))%>%
+  select(p.ID,t.purpose,time,time_factored,dist,dist_factored,mode,scenario,t.factor,t.weight,p.weight)
+
+
+
+trips_trads_noWeight = trips_trads %>%
+  mutate(t.weight = 1,
+         p.weight = 1,
+         scenario = "TRADS_noWeight")
+
+trips <- bind_rows(trips_ref, trips_ref_over5,trips_trads,trips_trads_noWeight)%>%
+  mutate(mode = factor(mode, levels = c("Driving Car", 
+                                        "Car Passenger", 
+                                        "Public Transport", 
+                                        "Walking", 
+                                        "Cycling", 
+                                        "Other")),
+         t.purpose = case_when(
+           t.purpose == "HBW" ~ "Home-based-work",
+           t.purpose == "HBE" ~ "Home-based-education",
+           t.purpose == "HBA" ~ "Home-based-accompanying",
+           t.purpose == "HBS" ~ "Home-based-shopping",
+           t.purpose == "HBR" ~ "Home-based-recreation",
+           t.purpose == "HBO" ~ "Home-based-other",
+           t.purpose == "NHBO" ~ "Non-home-based-other",
+           t.purpose == "NHBW" ~ "Non-home-based-work",
+           t.purpose == "RRT" ~ "Recreational round trip",
+           TRUE ~ NA_character_),
+         t.purpose = factor(t.purpose, levels = c("Home-based-work", 
+                                                  "Home-based-education", 
+                                                  "Home-based-accompanying", 
+                                                  "Home-based-shopping", 
+                                                  "Home-based-recreation", 
+                                                  "Home-based-other", 
+                                                  "Non-home-based-other", 
+                                                  "Non-home-based-work",
+                                                  "Recreational round trip")))
+  
+#trips = trips%>%filter(t.purpose!="Recreational round trip")
+#trips = trips%>%filter(scenario%in%c("TRADS","Baseline_over5"))
+rm(trips_ref, trips_ref_over5,trips_trads,trips_trads_noWeight)
+
+```
+
+## Key Figures
+```{r message = FALSE}
+pop_baseline = nrow(pp_ref)
+pop_baseline_over5 = nrow(pp_ref%>%filter(age>=5))
+pop_trads = sum(pp_trads$hh.expansionFactor)
+pop_trads_noWeight = nrow(pp_trads)
+
+summary = trips%>%group_by(scenario)%>%summarise(trips=sum(t.factor*t.weight))
+
+summary = summary%>%
+  mutate(pop= c(pop_baseline,pop_baseline_over5,pop_trads,pop_trads_noWeight),
+         avgTrip= trips/pop)
+rm(pp_ref,pp_ref_over5,pp_trads)
+```
+
+```{r echo = FALSE}
+summary%>%
+  gt() %>%
+  tab_header(
+    title = "Key Figures",
+  ) %>%
+  cols_label(
+    trips = "Total Trips over a week",
+    pop = "Total population",
+    avgTrip = "Weekly Trip Rates Per Person"
+  ) 
+```
+
+## Trips by purpose
+```{r message=FALSE}
+summary = trips%>%
+  group_by(scenario,t.purpose)%>%
+  summarise(count=sum(t.factor*t.weight))%>%
+  mutate(percent = count/sum(count)*100)
+
+#add NTS distribution for comparison
+NTS <- data.frame(
+  scenario = "NTS_northwest",            
+  t.purpose = unique(summary$t.purpose),   
+  count = 0,                   
+  percent = c(18.5,6.7,14.0,16.6,19.8,8.6,9.0,2.9,3.9) 
+)
+
+summary=rbind(summary,NTS)
+```
+
+
+```{r echo=FALSE, fig.width=10}
+ggplot(summary, aes(x = scenario, y = percent, fill = t.purpose)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = ifelse(percent > 1, paste0(round(percent, 1), "%"), "")), # Show label only if >= 1%
+    position = position_fill(vjust = 0.5), 
+    color = "white",
+    size = 3
+  ) +
+  labs(
+    title = "Trips by purpose",
+    y = "Proportion (%)",
+    x = "Scenario",
+    fill = "Purpose"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"), 
+    #axis.text.y = element_blank(),
+    axis.text.x = element_text(face = "bold"),
+    strip.placement = "outside", 
+    strip.text = element_text(face = "bold"),
+    legend.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) + guides(fill = guide_legend(nrow = 3)) + coord_flip() +scale_y_reverse()
+
+```
+
+
+
+## Trips by distance bracket
+```{r message=FALSE}
+
+trips$distance_bracket <- cut(
+  trips$dist,
+  breaks = c(0, 1, 3, 5, 10, 20, 40, Inf),
+  labels = c("0-1", "1-3", "3-5", "5-10", "10-20", "20-40", "40+"),
+  right = FALSE)
+
+summary <- trips %>%
+  group_by(scenario, distance_bracket) %>%
+  summarise(count = sum(t.factor*t.weight)) %>%
+  mutate(percent = count / sum(count) * 100)
+
+```
+
+
+```{r echo=FALSE, fig.width=10}
+ggplot(summary, aes(x = distance_bracket, y = percent, fill = scenario)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  geom_text(
+    aes(label = ifelse(percent > 1, paste0(round(percent, 1), "%"), "")), # Show label only if >= 1%
+    position = position_dodge(width = 1),
+    vjust = -0.5,
+    color = "black",
+    size = 3
+  ) +
+  labs(
+    title = "Trips by Distance Bracket",
+    y = "Proportion (%)",
+    x = "Distance (km)",
+    fill = "Scenario"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"), 
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(face = "bold"),
+    strip.placement = "outside", 
+    strip.text = element_text(face = "bold"),
+    legend.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) +guides(fill = guide_legend(nrow = 1)) 
+
+```
+## Trips by distance bracket by mode
+```{r message=FALSE}
+
+trips$distance_bracket <- cut(
+  trips$dist,
+  breaks = c(0, 1, 3, 5, 10, 20, 40, Inf),
+  labels = c("0-1", "1-3", "3-5", "5-10", "10-20", "20-40", "40+"),
+  right = FALSE)
+
+summary <- trips %>%
+  group_by(distance_bracket, mode, scenario) %>%
+  summarise(count = sum(t.factor*t.weight), .groups = 'drop') %>%
+  group_by(mode, scenario) %>%
+  mutate(percent = count / sum(count) * 100)
+
+```
+
+
+```{r echo=FALSE, fig.width=8, fig.height=8}
+ggplot(summary, aes(x = scenario , y = percent, fill = distance_bracket)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = ifelse(percent > 1, paste0(round(percent, 1), "%"), "")), # Show label only if >= 1%
+    position = position_fill(vjust = 0.5), 
+    color = "white",
+    size = 3
+  ) +
+  labs(
+    title = "Trips by Distance Bracket by Mode",
+    y = "Proportion (%)",
+    x = "Transport Mode",
+    fill = "Distance (km)"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"), 
+    #axis.text.y = element_blank(),
+    #axis.text.x = element_text(face = "bold"),
+    axis.text.x = element_blank(),
+    strip.placement = "outside", 
+    strip.text = element_text(face = "bold"),
+    legend.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) + 
+  facet_wrap(~ mode, scales = "free_x", nrow = 5) +
+  guides(fill = guide_legend(nrow = 1)) +
+  coord_flip()+
+  scale_y_reverse()
+
+```
+
+## Trip Length Distribution by Transport Mode
+```{r echo=FALSE, fig.width=8, fig.height=8}
+ggplot(trips, aes(x = dist, color = scenario)) +
+  geom_density() +
+  labs(
+    title = "Trip Length Distribution",
+    x = "Distance (km)",
+    color = "Scenario"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    # panel.grid.major = element_blank(),
+    # panel.grid.minor = element_blank(),
+    # axis.ticks.y = element_blank(),
+    # plot.title = element_text(hjust = 0.5, face = "bold"), 
+    # #axis.text.y = element_blank(),
+    # #axis.text.x = element_text(face = "bold"),
+    # axis.text.x = element_blank(),
+    # strip.placement = "outside", 
+    # strip.text = element_text(face = "bold"),
+    # legend.text = element_text(face = "bold"),
+    # legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) + 
+  facet_wrap(~ mode, scales = "free") 
+
+```
+
+## Overall Mode share
+
+```{r message=FALSE}
+summary <- trips %>%
+  group_by(scenario,mode) %>%
+  summarise(count = sum(t.factor*t.weight)) %>%
+  mutate(percent = count / sum(count) * 100)
+
+```
+
+```{r echo=FALSE, fig.width=8,}
+ggplot(summary, aes(x = scenario, y = percent, fill = mode)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = ifelse(percent > 1, paste0(round(percent, 1), "%"), "")), # Show label only if >= 1%
+    position = position_fill(vjust = 0.5), 
+    color = "white",
+    size = 3
+  ) +
+  labs(
+    title = "Transport Mode Share by Trip Distance",
+    y = "Proportion (%)",
+    x = "Distance (km)",
+    fill = "Transport Mode"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"), 
+    axis.text.x = element_text(face = "bold"),
+    strip.placement = "outside", 
+    strip.text = element_text(face = "bold"),
+    legend.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) +guides(fill = guide_legend(nrow = 1)) +
+  coord_flip() +
+  scale_y_reverse()
+
+```
+
+## Mode share by distance bracket
+
+```{r message=FALSE}
+
+trips$distance_bracket <- cut(
+  trips$dist,
+  breaks = c(0, 1, 3, 5, 10, 20, 40, Inf),
+  labels = c("0-1", "1-3", "3-5", "5-10", "10-20", "20-40", "40+"),
+  right = FALSE)
+
+summary <- trips %>%
+  group_by(distance_bracket, mode, scenario) %>%
+  summarise(count = sum(t.factor*t.weight), .groups = 'drop') %>%
+  group_by(distance_bracket, scenario) %>%
+  mutate(percent = count / sum(count) * 100)
+
+```
+
+```{r echo=FALSE, fig.width=8, fig.height=12}
+ggplot(summary, aes(x = distance_bracket, y = percent, fill = mode)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = ifelse(percent > 1, paste0(round(percent, 1), "%"), "")), # Show label only if >= 1%
+    position = position_fill(vjust = 0.5), 
+    color = "white",
+    size = 3
+  ) +
+  labs(
+    title = "Transport Mode Share by Trip Distance",
+    y = "Proportion (%)",
+    x = "Distance (km)",
+    fill = "Transport Mode"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.ticks.y = element_blank(),
+    plot.title = element_text(hjust = 0.5, face = "bold"), 
+    axis.text.y = element_blank(),
+    axis.text.x = element_text(face = "bold"),
+    strip.placement = "outside", 
+    strip.text = element_text(face = "bold"),
+    legend.text = element_text(face = "bold"),
+    legend.title = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) + facet_wrap(~ scenario, scales = "free_x") +guides(fill = guide_legend(nrow = 1)) 
+
+```
+
+## Avergae Weekly Distance Travelled Per Person
+Note that 
+
+1. Distances of all modes are routed distances resulting from MATSim. For TRADS trips, the centroids of origin OA and destination OA are used for routing.
+
+2. In MATSim, PT is time-based routing. So for the plots, we assume PT distances is equal to Car routed distance
+
+```{r message=FALSE}
+summary=trips%>%
+  group_by(p.ID, mode,scenario)%>%
+  summarise(dist=sum(dist_factored*p.weight))
+
+summary=summary%>%
+  group_by(mode, scenario)%>%
+  summarise(totalDist=sum(dist)) %>% 
+  mutate(avgDist = case_when(scenario == "Baseline" ~ totalDist/pop_baseline,
+                             scenario == "Baseline_over5" ~ totalDist/pop_baseline_over5,
+                             scenario == "TRADS" ~ totalDist/pop_trads,
+                             scenario == "TRADS_noWeight" ~ totalDist/pop_trads_noWeight))
+
+```
+
+```{r echo=FALSE, fig.width=8}
+ggplot(summary) +
+  aes(x = mode, y = avgDist, fill = scenario) +
+  geom_col(position = "dodge2") +
+  geom_text(aes(label = round(avgDist, 2),
+                y = avgDist),
+            size = 3, #hjust = -0.1, 
+            hjust = -0.2, 
+            vjust = 0.2,
+            position = position_dodge(1),
+            inherit.aes = TRUE) +
+  labs(title = "Average weekly distance (km) by mode per person",
+       fill = "Scenario",
+       x = "", y = "Km") +
+  coord_flip() +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+```
+
+
+## Avergae Weekly Time Travelled Per Person
+Note that 
+
+1. Travel time of all modes are routed travel time resulting from MATSim. For TRADS trips, the centroids of origin OA and destination OA are used for routing. 
+
+2. PT travel time includes access, egress time, in-vehicle time, waiting time and transfer time.
+
+3. Car travel time are routed on congested network
+
+```{r message=FALSE}
+summary=trips%>%
+  group_by(p.ID, mode,scenario)%>%
+  summarise(time=sum(time_factored*p.weight))
+
+summary=summary%>%
+  group_by(mode, scenario)%>%
+  summarise(totalTime=sum(time)) %>% 
+  mutate(avgTime = case_when(scenario == "Baseline" ~ totalTime/pop_baseline*60,
+                             scenario == "Baseline_over5" ~ totalTime/pop_baseline_over5*60,
+                             scenario == "TRADS" ~ totalTime/pop_trads*60,
+                             scenario == "TRADS_noWeight" ~ totalTime/pop_trads_noWeight*60))
+
+```
+
+```{r echo=FALSE, fig.width=8}
+ggplot(summary) +
+  aes(x = mode, y = avgTime, fill = scenario) +
+  geom_col(position = "dodge2") +
+  geom_text(aes(label = round(avgTime, 1),
+                y = avgTime),
+            size = 3, #hjust = -0.1, 
+            hjust = -0.2, 
+            vjust = 0.2,
+            position = position_dodge(1),
+            inherit.aes = TRUE) +
+  labs(title = "Average weekly minutes by mode per person",
+       fill = "Scenario",
+       x = "", y = "Hour") +
+  coord_flip() +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom")
+
+```
