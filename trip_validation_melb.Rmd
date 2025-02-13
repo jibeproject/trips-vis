@@ -20,11 +20,26 @@ rm(list=ls())
 ```{r load files, message=FALSE}
 trips_ref <- fread('data/trips.csv')  ## to update with Melb model outputs when available
 
+pp_ref <- fread("data/pp_2021.csv")  ## to update with Melb model outputs when available
+
 trips_vista <- fread("data/VISTA_2012-20_LGA_V1/T_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
 
 pp_vista <- fread("data/VISTA_2012-20_LGA_V1/P_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
 
-pp_ref <- fread("data/pp_2021.csv")  ## to update with Melb model outputs when available
+# fields for weights [SP note: check capitalisation of SA3 field names]
+if ("wdtripwgt_SA3" %in% names(trips_vista) & "wetripwgt_SA3" %in% names(trips_vista) &
+    "wdperswgt_SA3" %in% names(pp_vista) & "weperswgt_SA3" %in% names(pp_vista)) {
+  wdtripwgt <- "wdtripwgt_SA3"
+  wetripwgt <- "wetripwgt_SA3"
+  wdperswgt <- "wdperswgt_SA3"
+  weperswgt <- "weperswgt_SA3"
+} else {
+  wdtripwgt <- "wdtripwgt_LGA"
+  wetripwgt <- "wetripwgt_LGA"
+  wdperswgt <- "wdperswgt_LGA"
+  weperswgt <- "weperswgt_LGA"
+  
+}
 
 ```
 
@@ -34,9 +49,9 @@ Note that
 
 2. Since VISTA is a one-day diary, all trips are factored/weighted by 7 *[SP note: to confirm that the Melbourne model output will cover a full week like the Manchester model output]*
 
-3. To be consistent with trip-based model, return trips (e.g. work to home) are dropped from TRADS. Therefore, home-based trips and RRT in TRADS are also factored/weighted by 2
+3. To be consistent with trip-based model, return trips (e.g. work to home) are dropped from VISTA. Therefore, home-based trips and RRT in VISTA are also factored/weighted by 2
 
-4. Trips that either origin or destination outside Greater Melbourne Boundary are dropped from TRADS dataset *[SP note: not implemented yet.  To confirm whether the VISTA data will be pre-processed to include 'OriginWithinBoundary' and 'DestinationWithinBoundary' fields like the TRADS data.  If not, an additional step can be included here to exclude trips starting or ending outside the boundary.]*
+4. Trips that either origin or destination outside Greater Melbourne Boundary are dropped from VISTA dataset 
 
 5. VISTA includes all ages (unlike TRADS, which does not include kids under 5 years old)
 ```{r data prep, message=FALSE}
@@ -83,6 +98,20 @@ trips_ref <- trips_ref %>%
 
 trips_vista <- trips_vista %>% 
   mutate(scenario = "VISTA")
+
+# exclude trips outside Greater Melbourne [SP note: check that this works as intended:
+# field title, exact names]
+trips_vista <- trips_vista %>%
+  filter(origSA4_name %in% c("Melbourne - Inner", "Melbourne - Inner East",
+                             "Melbourne - Inner South", "Melbourne - North East",
+                             "Melbourne - North West", "Melbourne - Outer East",
+                             "Melbourne - South East", "Melbourne - West",
+                             "Mornington Peninsula") &
+           destSA4_name %in% c("Melbourne - Inner", "Melbourne - Inner East",
+                             "Melbourne - Inner South", "Melbourne - North East",
+                             "Melbourne - North West", "Melbourne - Outer East",
+                             "Melbourne - South East", "Melbourne - West",
+                             "Mornington Peninsula"))
 
 # add purpose to VISTA trips (see Carl's work at https://github.com/jibeproject/Melbourne-Mode-Choice/blob/main/JIBE_Melbourne_Mode_Choice.md#jibe-melbourne-mode-choice-preparation-and-analysis)
 
@@ -183,13 +212,13 @@ trips_vista <- trips_vista %>%
     time_factored = time * t.factor,
     dist_factored = dist * t.factor,
     
-    # [SP note: check names of weight fields used in full VISTA version.  Lines
+    # [SP note: check structure of weights in full VISTA version.  Lines
     # below assume there are weekday ('wd') and weekend ('we') weights, with only 
     # the right one specified for the relevant day and the other one blank or NA]
-    t.weight = ifelse(is.na(wdtripwgt_LGA) | wdtripwgt_LGA == "", 
-                      wetripwgt_LGA, wdtripwgt_LGA),
-    p.weight = ifelse(is.na(wdperswgt_LGA) | wdperswgt_LGA == "", 
-                      weperswgt_LGA, wdperswgt_LGA),
+    t.weight = ifelse(is.na(.data[[wdtripwgt]]) | .data[[wdtripwgt]] == "", 
+                      .data[[wetripwgt]], .data[[wdtripwgt]]),
+    p.weight = ifelse(is.na(.data[[wdperswgt]]) | .data[[wdperswgt]] == "", 
+                      .data[[weperswgt]], .data[[wdperswgt]]),
     # convert weights to numeric format
     t.weight = as.numeric(gsub(",", "", t.weight)),
     p.weight = as.numeric(gsub(",", "", p.weight))) %>%
@@ -238,8 +267,8 @@ rm(trips_ref, trips_vista, trips_vista_noWeight)
 ## Key Figures
 ```{r message = FALSE}
 pop_baseline = nrow(pp_ref)
-pop_vista = sum(as.numeric(gsub(",", "", pp_vista$wdperswgt_LGA)), na.rm = T) +
-  sum(as.numeric(gsub(",", "", pp_vista$weperswgt_LGA)), na.rm = T)  # [SP note: check weight fields in full VISTA as above]
+pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
+  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  # [SP note: check weight fields in full VISTA as above]
 pop_vista_noWeight = nrow(pp_vista)
 
 summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
@@ -575,7 +604,7 @@ ggplot(summary) +
 ```
 
 
-## Avergae Weekly Time Travelled Per Person
+## Average Weekly Time Travelled Per Person
 Note that 
 
 1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)]*
