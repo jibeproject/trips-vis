@@ -22,11 +22,13 @@ trips_ref <- fread('data/trips.csv')  ## to update with Melb model outputs when 
 
 pp_ref <- fread("data/pp_2021.csv")  ## to update with Melb model outputs when available
 
+# CARL - please can you replace the two paths below with the path/file names for the full VISTA data
+
 trips_vista <- fread("data/VISTA_2012-20_LGA_V1/T_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
 
 pp_vista <- fread("data/VISTA_2012-20_LGA_V1/P_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
 
-# fields for weights [SP note: check capitalisation of SA3 field names]
+# fields for weights [CARL - please can you check that the SA3 field names are correct.  Eg I'm not sure about capitalisation.  I want to use the SA3 weights; the 'else' option of using LGA weights is only there so it will run when I'm using the version that doesn't contain those weights.]
 if ("wdtripwgt_SA3" %in% names(trips_vista) & "wetripwgt_SA3" %in% names(trips_vista) &
     "wdperswgt_SA3" %in% names(pp_vista) & "weperswgt_SA3" %in% names(pp_vista)) {
   wdtripwgt <- "wdtripwgt_SA3"
@@ -99,8 +101,9 @@ trips_ref <- trips_ref %>%
 trips_vista <- trips_vista %>% 
   mutate(scenario = "VISTA")
 
-# exclude trips outside Greater Melbourne [SP note: check that this works as intended:
-# field title, exact names]
+# exclude trips outside Greater Melbourne [CARL - please check that this works as intended:
+# in particular, that the origSA4_name and destSA4_name fields are present, and that the filter 
+# succeeds in picking up trips from all 9 of the specified SA4s]
 trips_vista <- trips_vista %>%
   filter(origSA4_name %in% c("Melbourne - Inner", "Melbourne - Inner East",
                              "Melbourne - Inner South", "Melbourne - North East",
@@ -180,7 +183,8 @@ trips_vista <- trips_vista %>%
       linkmode == "Walking"                        ~ "Walking",
       linkmode == "Bicycle"                        ~ "Cycling",
       # [SP note: 'Other' (in the version of VISTA I'm using) covers Jogging,
-      # Mobility Scooter, Motorcycle, Other, and Taxi - confirm in full VISTA version]
+      # Mobility Scooter, Motorcycle, Other, and Taxi - CARL - please could you confirm and update
+      # this note in the full VISTA version]
       TRUE                                         ~ "Other"
     ),
     t.factor = if_else(purpose %in% c("HBW", 
@@ -192,12 +196,15 @@ trips_vista <- trips_vista %>%
                                       "RRT"), 2*7, 1*7),
     
     # [SP note: alternative version of time and dist based on time/dist
-    # specified in the VISTA data]
+    # specified in the VISTA data] [CARL - please don't change anything here at this stage:
+    # relates to query below for Qin and Corin]
     time = triptime / 60,  # time converted from minutes to hours
     dist = cumdist,  # distance in km
     
     # # [SP note: will the version of VISTA have been pre-processed to include
     # # these 'bike_fast_time' etc fields? If so, uncomment (and delete above)]
+    # # [CARL - this is a query for Qin and Corin; no need to do anything with this
+    # # commented-out code block at the moment]
     # time = case_when(mode == "Cycling"          ~ bike_fast_time/3600,
     #                  mode == "Walking"          ~ walk_fast_time/3600,
     #                  mode == "Public Transport" ~ pt_time/3600,
@@ -215,6 +222,8 @@ trips_vista <- trips_vista %>%
     # [SP note: check structure of weights in full VISTA version.  Lines
     # below assume there are weekday ('wd') and weekend ('we') weights, with only 
     # the right one specified for the relevant day and the other one blank or NA]
+    # CARL - please check that weights in the full VISTA version also follow 
+    # this pattern
     t.weight = ifelse(is.na(.data[[wdtripwgt]]) | .data[[wdtripwgt]] == "", 
                       .data[[wetripwgt]], .data[[wdtripwgt]]),
     p.weight = ifelse(is.na(.data[[wdperswgt]]) | .data[[wdperswgt]] == "", 
@@ -262,13 +271,29 @@ trips <- bind_rows(trips_ref, trips_vista, trips_vista_noWeight)%>%
   
 rm(trips_ref, trips_vista, trips_vista_noWeight)
 
+# CARL - at this point, please check that 'trips' has the correct fields and data structure as follows
+# > str(trips)
+# Classes ‘data.table’ and 'data.frame':	22702179 obs. of  11 variables:
+#  $ p.ID         : chr  "5" "5" "5" "5" ...
+#  $ t.purpose    : Factor w/ 9 levels "Home-based-work",..: 1 1 1 1 1 1 1 1 1 1 ...
+#  $ time         : num  0.162 0.162 0.162 0.162 0.178 ...
+#  $ time_factored: num  0.323 0.323 0.323 0.323 0.355 ...
+#  $ dist         : num  5.34 5.34 5.34 5.34 7.08 ...
+#  $ dist_factored: num  10.7 10.7 10.7 10.7 14.2 ...
+#  $ mode         : Factor w/ 6 levels "Driving Car",..: 1 1 1 1 1 1 4 4 4 4 ...
+#  $ scenario     : chr  "Baseline" "Baseline" "Baseline" "Baseline" ...
+#  $ t.factor     : num  2 2 2 2 2 2 2 2 2 2 ...
+#  $ t.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
+#  $ p.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
+#  - attr(*, ".internal.selfref")=<externalptr> 
+
 ```
 
 ## Key Figures
 ```{r message = FALSE}
 pop_baseline = nrow(pp_ref)
 pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
-  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  # [SP note: check weight fields in full VISTA as above]
+  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  # [CARL - if the weight fields were correct in the  full VISTA as above, then this should also work here]
 pop_vista_noWeight = nrow(pp_vista)
 
 summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
@@ -281,6 +306,10 @@ rm(pp_ref, pp_vista)
 ```
 
 ```{r echo = FALSE}
+
+# CARL - everything else from here on should now run as written, and produce
+# some pretty tables and figures (they were created by Qin, not me!)
+
 summary%>%
   gt() %>%
   tab_header(
@@ -565,7 +594,7 @@ ggplot(summary, aes(x = distance_bracket, y = percent, fill = mode)) +
 ## Avergae Weekly Distance Travelled Per Person
 Note that 
 
-1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)]*
+1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)] [CARL - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
 
 2. In MATSim, PT is time-based routing. So for the plots, we assume PT distances is equal to Car routed distance
 
@@ -607,7 +636,7 @@ ggplot(summary) +
 ## Average Weekly Time Travelled Per Person
 Note that 
 
-1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)]*
+1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)][CARL - as above - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
 
 2. PT travel time includes access, egress time, in-vehicle time, waiting time and transfer time.
 
