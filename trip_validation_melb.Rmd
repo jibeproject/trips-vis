@@ -147,19 +147,19 @@ trips_ref <- trips_ref %>%
   select(p.ID, t.purpose, time, time_factored, dist, dist_factored, mode,
          scenario, t.factor, t.weight, p.weight)
 
-trips_vista <- trips_vista %>% 
+trips_scenario_vista <- trips_vista %>% 
   mutate(scenario = "VISTA")
 
 # exclude trips outside Greater Melbourne [CARL - please check that this works as intended:
 # in particular, that the origSA4_name and destSA4_name fields are present, and that the filter 
 # succeeds in picking up trips from all 9 of the specified SA4s]
-trips_vista <- trips_vista %>%
-  filter(origin_area %in% c("Melbourne - Inner", "Melbourne - Inner East",
+trips_scenario_vista <- trips_scenario_vista %>%
+  filter(!!sym(origin_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
                              "Melbourne - Inner South", "Melbourne - North East",
                              "Melbourne - North West", "Melbourne - Outer East",
                              "Melbourne - South East", "Melbourne - West",
                              "Mornington Peninsula") &
-           destination_area %in% c("Melbourne - Inner", "Melbourne - Inner East",
+           !!sym(destination_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
                              "Melbourne - Inner South", "Melbourne - North East",
                              "Melbourne - North West", "Melbourne - Outer East",
                              "Melbourne - South East", "Melbourne - West",
@@ -169,7 +169,7 @@ trips_vista <- trips_vista %>%
 
 # clean trip purposes, by replacing purpose/place with 'work related' where
 # one is specified and the other is missing
-trips_vista <- trips_vista %>%
+trips_scenario_vista <- trips_scenario_vista %>%
   mutate(origplace1 = ifelse((is.na(origplace1) | str_detect(origplace1, "Unknown")) & 
                                origpurp1 == "Work Related",
                              "Workplace", 
@@ -188,7 +188,7 @@ trips_vista <- trips_vista %>%
                             destpurp1))
   
 # assign purpose
-trips_vista <- trips_vista %>%
+trips_scenario_vista <- trips_scenario_vista %>%
   mutate(purpose = case_when(
     origpurp2 == "Employer's Business" | destpurp2 == "Employer's Business" ~ "business",
     origpurp1 %in% c("Unknown Purpose (at start of day)", "Not Stated") | 
@@ -218,12 +218,12 @@ trips_vista <- trips_vista %>%
   ))
 
 # Inspect modes
-cat(trips_vista$linkmode %>% unique() %>% sort())
+cat(trips_scenario_vista$linkmode %>% unique() %>% sort())
 ## In full VISTA, the following modes were present:.groups
 ## "Bicycle","Jogging","Mobility Scooter","Motorcycle","Other","Public Bus","School Bus","Taxi","Train","Tram","Vehicle Driver","Vehicle Passenger","Walking"
 
 
-trips_vista <- trips_vista %>% 
+trips_scenario_vista <- trips_scenario_vista %>% 
   left_join(pp_vista, by = "persid") %>%
   filter(!purpose%in%c("NA","business","unknown"))%>%
   mutate(
@@ -284,12 +284,12 @@ trips_vista <- trips_vista %>%
   select(p.ID = persid, t.purpose = purpose, time, time_factored, dist, 
          dist_factored, mode, scenario, t.factor, t.weight, p.weight)
 
-trips_vista_noWeight = trips_vista %>%
+trips_scenario_vista_noWeight = trips_scenario_vista %>%
   mutate(t.weight = 1,
          p.weight = 1,
          scenario = "VISTA_noWeight")
 
-trips <- bind_rows(trips_ref, trips_vista, trips_vista_noWeight)%>%
+trips <- bind_rows(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeight)%>%
   mutate(mode = factor(mode, levels = c("Driving Car", 
                                         "Car Passenger", 
                                         "Public Transport", 
@@ -352,39 +352,36 @@ trips <- bind_rows(trips_ref, trips_vista, trips_vista_noWeight)%>%
 
 ## Key Figures
 ```{r message = FALSE}
-# pop_baseline = nrow(pp_ref)
-# pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
-#   sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  
-# pop_vista_noWeight = nrow(pp_vista)
+pop_baseline = nrow(pp_ref)
+pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
+  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  
+pop_vista_noWeight = nrow(pp_vista)
 
-# summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
+summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
 
-# summary = summary %>% 
-#   mutate(pop = c(pop_baseline, pop_vista, pop_vista_noWeight),
-#          avgTrip = trips/pop)
+summary = summary %>% 
+  mutate(pop = c(pop_baseline, pop_vista, pop_vista_noWeight),
+         avgTrip = trips/pop)
 ```
-> - *CH: There is an error here --- not sure exactly what we're trying to do but pop cannot be a vector of 3, as there is only a single value in summary$trips for a single scenario (baseline)
 
 ```{r clean-up}
-# rm(trips_ref, trips_vista, trips_vista_noWeight, pp_ref, pp_vista)
+rm(trips_ref, trips_vista, trips_vista_noWeight, pp_ref, pp_vista)
 ```
 
 ```{r echo = FALSE}
-
 # SP: everything else from here on should now run as written, and produce
 # some pretty tables and figures (they were created by Qin, not me!)
-# CH: unfortunately I get an error above... so I've commented out the code blocks pending a fix
 
-# summary%>%
-  # gt() %>%
-  # tab_header(
-  #   title = "Key Figures",
-  # ) %>%
-  # cols_label(
-  #   trips = "Total Trips over a week",
-  #   pop = "Total population",
-  #   avgTrip = "Weekly Trip Rates Per Person"
-  # ) 
+summary%>%
+  gt() %>%
+  tab_header(
+    title = "Key Figures",
+  ) %>%
+  cols_label(
+    trips = "Total Trips over a week",
+    pop = "Total population",
+    avgTrip = "Weekly Trip Rates Per Person"
+  ) 
 ```
 
 ## Trips by purpose
@@ -659,8 +656,7 @@ ggplot(summary, aes(x = distance_bracket, y = percent, fill = mode)) +
 ## Avergae Weekly Distance Travelled Per Person
 Note that 
 
-1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)] [CARL - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
-> *CH: No, I can confirm VISTA coordinates are not Mesh Block centroids; I believe the coordinates may be perturbed for privacy, but if compared with actual Mesh Blocks there are multiple for example origins within single Mesh Blocks.  Therefore, its not using the centroid as the origin in the full data.  An open data version of VISTA may use Mesh Block centroids.*
+1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that these routed distances will be calculated for VISTA]
 
 2. In MATSim, PT is time-based routing. So for the plots, we assume PT distances is equal to Car routed distance
 
@@ -702,8 +698,7 @@ ggplot(summary) +
 ## Average Weekly Time Travelled Per Person
 Note that 
 
-1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)][CARL - as above - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
-> *CH: No, I can confirm VISTA coordinates are not Mesh Block centroids; I believe the coordinates may be perturbed for privacy, but if compared with actual Mesh Blocks there are multiple for example origins within single Mesh Blocks.  Therefore, its not using the centroid as the origin in the full data.  An open data version of VISTA may use Mesh Block centroids.*
+1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA]*
 
 2. PT travel time includes access, egress time, in-vehicle time, waiting time and transfer time.
 
