@@ -1,12 +1,13 @@
 ---
 title: "trip_validation_melb"
-author: "Marina_Qin_Steve"
+author: "Marina_Qin_Steve_Carl"
 date: "2025-##-##"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+# install.packages(c('tidyverse','data.table','gt')
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
@@ -17,30 +18,67 @@ rm(list=ls())
 ```
 
 ## Load baseline trips.csv and VISTA trips
-```{r load files, message=FALSE}
-trips_ref <- fread('data/trips.csv')  ## to update with Melb model outputs when available
+```{r load-jibe-trips, message=FALSE}
+## Select model outputs to validate (e.g. Melbourne model outputs of trips.csv and pp_2021.csv, respectively)
+trips_ref <- file.choose() %>% fread() 
+```
 
-pp_ref <- fread("data/pp_2021.csv")  ## to update with Melb model outputs when available
+```{r load-jibe-persons, message=FALSE}
+pp_ref <- file.choose() %>% fread()
+```
 
-# CARL - please can you replace the two paths below with the path/file names for the full VISTA data
+```{r load-vista-trips, message=FALSE}
+## Select reference survey data (e.g. VISTA trips and persons data; T_VISTA_1220_LGA_V1.csv and P_VISTA_1220_LGA_V1.csv
+trips_vista <- file.choose() %>% fread() 
+```
 
-trips_vista <- fread("data/VISTA_2012-20_LGA_V1/T_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
+```{r load-vista-persons, message=FALSE}
+pp_vista <- file.choose() %>% fread() 
+```
 
-pp_vista <- fread("data/VISTA_2012-20_LGA_V1/P_VISTA_1220_LGA_V1.csv")  ## to replace with full VISTA data
+```{r load-vista-households, message=FALSE}
+hh_vista <- file.choose() %>% fread() 
+```
 
-# fields for weights [CARL - please can you check that the SA3 field names are correct.  Eg I'm not sure about capitalisation.  I want to use the SA3 weights; the 'else' option of using LGA weights is only there so it will run when I'm using the version that doesn't contain those weights.]
-if ("wdtripwgt_SA3" %in% names(trips_vista) & "wetripwgt_SA3" %in% names(trips_vista) &
-    "wdperswgt_SA3" %in% names(pp_vista) & "weperswgt_SA3" %in% names(pp_vista)) {
-  wdtripwgt <- "wdtripwgt_SA3"
-  wetripwgt <- "wetripwgt_SA3"
-  wdperswgt <- "wdperswgt_SA3"
-  weperswgt <- "weperswgt_SA3"
+## Brief summary of VISTA context
+Could travel demand for Melbourne be better estimated if stratified by the day of week variables, or at least, weekday and weekend?  It probably is not feasible to restrict to only a single wave like 2017-18, but pooled across the full 2012-20 (notwithstanding changes to built environment over that time, a limitation), the sample size seems reasonable.  There were 23,7778 households completing travel surveys for weekdays (169,173 trips), and 8,345 households completing surveys for weekend days (52,646 trips).  There were also 4,115 trips without recorded day of week information.
+```{r vista-household-trip-date-summary}
+ hh_vista %>% group_by(surveyperiod) %>% summarise(count = n())    
+ hh_vista %>% group_by(travdow) %>% summarise(count = n()) 
+ hh_vista %>% group_by(daytype) %>% summarise(count = n())
+ hh_vista %>% group_by(surveyperiod,daytype) %>% summarise(count = n())   
+
+merged_vista <- trips_vista %>%
+  left_join(hh_vista, by = "hhid") %>%
+  left_join(pp_vista, by = "persid") 
+
+merged_vista  %>% group_by(travdow) %>% summarise(count = n()) 
+merged_vista %>% group_by(daytype) %>% summarise(count = n())
+```
+
+
+
+```{r load-weights}
+# fields for weights
+# 2025-02-26 confirmed that wdtripwgt_sa3 and wdperswgt_sa3 fields exist in the VISTA trips and persons data
+# the 'else' option of using LGA weights is used for test purposes with open data lacking the SA3 weights
+# Note: origin and destination variables are different; the full dataset has them lower case, but also has 
+# SA2 and SA3 in addition to SA4.
+if ("wdtripwgt_sa3" %in% names(trips_vista) & "wetripwgt_sa3" %in% names(trips_vista) &
+    "wdperswgt_sa3" %in% names(pp_vista) & "weperswgt_sa3" %in% names(pp_vista)) {
+  wdtripwgt <- "wdtripwgt_sa3"
+  wetripwgt <- "wetripwgt_sa3"
+  wdperswgt <- "wdperswgt_sa3"
+  weperswgt <- "weperswgt_sa3"
+  origin_area <- "origsa4_name"
+  destination_area <- "destsa4_name"
 } else {
   wdtripwgt <- "wdtripwgt_LGA"
   wetripwgt <- "wetripwgt_LGA"
   wdperswgt <- "wdperswgt_LGA"
   weperswgt <- "weperswgt_LGA"
-  
+  origin_area <- "origSA4_name"
+  destination_area <- "destSA4_name"
 }
 
 ```
@@ -49,14 +87,25 @@ if ("wdtripwgt_SA3" %in% names(trips_vista) & "wetripwgt_SA3" %in% names(trips_v
 Note that 
 1. For baseline data, home-based trips and RRT are factored/weighted by 2
 
-2. Since VISTA is a one-day diary, all trips are factored/weighted by 7 *[SP note: to confirm that the Melbourne model output will cover a full week like the Manchester model output]*
+2. Since VISTA is a one-day diary, all trips are factored/weighted by 7, to match the JIBE model full-week modelling approach. 
+
+> - *SP: to confirm that the Melbourne model output will cover a full week like the Manchester model output*
+> - *CH: this is my understanding.  Another thought is, instead of treating the one day as 'any day', should we instead try to stratify validation for specific days of the week, at least for weekend vs weekday.  We could do this using household information:*
+> |Variable|Type|Description|
+> |---|---|---|
+> |surveyperiod|char|Year the household was surveyed|
+> |travdow|char|Household travel day - day-of-week|
+> |travmonth|int|Month of survey|
+> |daytype|char|Survey day sorted into weekday or weekend day types|
+> - a follow up thought is, why don't we use the day stratified trip information to inform distribution estimates day by day, instead of using Manchester / Munich?  Could that work, or do travel diaries really have to be for individuals across consecutive days, rather than just demographic 'types' which might be more or less contribute to trip summaries for each day.
 
 3. To be consistent with trip-based model, return trips (e.g. work to home) are dropped from VISTA. Therefore, home-based trips and RRT in VISTA are also factored/weighted by 2
 
 4. Trips that either origin or destination outside Greater Melbourne Boundary are dropped from VISTA dataset 
+> - *CH: perhaps it would be better to use a buffered bounding box and origin/destination latitude and longitude, to allow for some visiting destinations outside, since we model this, I believe*
 
 5. VISTA includes all ages (unlike TRADS, which does not include kids under 5 years old)
-```{r data prep, message=FALSE}
+```{r data-prep, message=FALSE}
 trips_ref <- trips_ref %>% 
   mutate(scenario = "Baseline")
 
@@ -98,19 +147,19 @@ trips_ref <- trips_ref %>%
   select(p.ID, t.purpose, time, time_factored, dist, dist_factored, mode,
          scenario, t.factor, t.weight, p.weight)
 
-trips_vista <- trips_vista %>% 
+trips_scenario_vista <- trips_vista %>% 
   mutate(scenario = "VISTA")
 
 # exclude trips outside Greater Melbourne [CARL - please check that this works as intended:
 # in particular, that the origSA4_name and destSA4_name fields are present, and that the filter 
 # succeeds in picking up trips from all 9 of the specified SA4s]
-trips_vista <- trips_vista %>%
-  filter(origSA4_name %in% c("Melbourne - Inner", "Melbourne - Inner East",
+trips_scenario_vista <- trips_scenario_vista %>%
+  filter(!!sym(origin_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
                              "Melbourne - Inner South", "Melbourne - North East",
                              "Melbourne - North West", "Melbourne - Outer East",
                              "Melbourne - South East", "Melbourne - West",
                              "Mornington Peninsula") &
-           destSA4_name %in% c("Melbourne - Inner", "Melbourne - Inner East",
+           !!sym(destination_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
                              "Melbourne - Inner South", "Melbourne - North East",
                              "Melbourne - North West", "Melbourne - Outer East",
                              "Melbourne - South East", "Melbourne - West",
@@ -120,7 +169,7 @@ trips_vista <- trips_vista %>%
 
 # clean trip purposes, by replacing purpose/place with 'work related' where
 # one is specified and the other is missing
-trips_vista <- trips_vista %>%
+trips_scenario_vista <- trips_scenario_vista %>%
   mutate(origplace1 = ifelse((is.na(origplace1) | str_detect(origplace1, "Unknown")) & 
                                origpurp1 == "Work Related",
                              "Workplace", 
@@ -139,7 +188,7 @@ trips_vista <- trips_vista %>%
                             destpurp1))
   
 # assign purpose
-trips_vista <- trips_vista %>%
+trips_scenario_vista <- trips_scenario_vista %>%
   mutate(purpose = case_when(
     origpurp2 == "Employer's Business" | destpurp2 == "Employer's Business" ~ "business",
     origpurp1 %in% c("Unknown Purpose (at start of day)", "Not Stated") | 
@@ -168,10 +217,13 @@ trips_vista <- trips_vista %>%
     TRUE                                                  ~ "NHBO"
   ))
 
-# # confirm modes in full VISTA version
-# modes <- trips_vista$linkmode %>% unique() %>% sort()
+# Inspect modes
+cat(trips_scenario_vista$linkmode %>% unique() %>% sort())
+## In full VISTA, the following modes were present:.groups
+## "Bicycle","Jogging","Mobility Scooter","Motorcycle","Other","Public Bus","School Bus","Taxi","Train","Tram","Vehicle Driver","Vehicle Passenger","Walking"
 
-trips_vista <- trips_vista %>% 
+
+trips_scenario_vista <- trips_scenario_vista %>% 
   left_join(pp_vista, by = "persid") %>%
   filter(!purpose%in%c("NA","business","unknown"))%>%
   mutate(
@@ -182,9 +234,7 @@ trips_vista <- trips_vista %>%
                       "Train", "Tram")             ~ "Public Transport",
       linkmode == "Walking"                        ~ "Walking",
       linkmode == "Bicycle"                        ~ "Cycling",
-      # [SP note: 'Other' (in the version of VISTA I'm using) covers Jogging,
-      # Mobility Scooter, Motorcycle, Other, and Taxi - CARL - please could you confirm and update
-      # this note in the full VISTA version]
+      # 'Other' covers Jogging, Mobility Scooter, Motorcycle, Other, and Taxi in VISTA 2012-20
       TRUE                                         ~ "Other"
     ),
     t.factor = if_else(purpose %in% c("HBW", 
@@ -219,11 +269,9 @@ trips_vista <- trips_vista %>%
     time_factored = time * t.factor,
     dist_factored = dist * t.factor,
     
-    # [SP note: check structure of weights in full VISTA version.  Lines
-    # below assume there are weekday ('wd') and weekend ('we') weights, with only 
-    # the right one specified for the relevant day and the other one blank or NA]
-    # CARL - please check that weights in the full VISTA version also follow 
-    # this pattern
+    # Lines below assume there are weekday ('wd') and weekend ('we') weights, with only 
+    # the right one specified for the relevant day and the other one blank or NA].
+    # [2025-02-26 - confirms this assumption holds for full VISTA 2012-20 data)
     t.weight = ifelse(is.na(.data[[wdtripwgt]]) | .data[[wdtripwgt]] == "", 
                       .data[[wetripwgt]], .data[[wdtripwgt]]),
     p.weight = ifelse(is.na(.data[[wdperswgt]]) | .data[[wdperswgt]] == "", 
@@ -236,12 +284,12 @@ trips_vista <- trips_vista %>%
   select(p.ID = persid, t.purpose = purpose, time, time_factored, dist, 
          dist_factored, mode, scenario, t.factor, t.weight, p.weight)
 
-trips_vista_noWeight = trips_vista %>%
+trips_scenario_vista_noWeight = trips_scenario_vista %>%
   mutate(t.weight = 1,
          p.weight = 1,
          scenario = "VISTA_noWeight")
 
-trips <- bind_rows(trips_ref, trips_vista, trips_vista_noWeight)%>%
+trips <- bind_rows(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeight)%>%
   mutate(mode = factor(mode, levels = c("Driving Car", 
                                         "Car Passenger", 
                                         "Public Transport", 
@@ -268,10 +316,8 @@ trips <- bind_rows(trips_ref, trips_vista, trips_vista_noWeight)%>%
                                                   "Non-home-based-other", 
                                                   "Non-home-based-work",
                                                   "Recreational round trip")))
-  
-rm(trips_ref, trips_vista, trips_vista_noWeight)
 
-# CARL - at this point, please check that 'trips' has the correct fields and data structure as follows
+## 'trips' fields and data structure in sample open VISTA data
 # > str(trips)
 # Classes ‘data.table’ and 'data.frame':	22702179 obs. of  11 variables:
 #  $ p.ID         : chr  "5" "5" "5" "5" ...
@@ -287,27 +333,48 @@ rm(trips_ref, trips_vista, trips_vista_noWeight)
 #  $ p.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
 #  - attr(*, ".internal.selfref")=<externalptr> 
 
+## 'trips' fields and data structure in full VISTA data
+# > str(trips)
+# Classes 'data.table' and 'data.frame':  22468917 obs. of  11 variables:
+#  $ p.ID         : chr  "5" "5" "5" "5" ...
+#  $ t.purpose    : Factor w/ 9 levels "Home-based-work",..: 1 1 1 1 1 1 1 1 1 1 ...
+#  $ time         : num  0.162 0.162 0.162 0.162 0.178 ...
+#  $ time_factored: num  0.323 0.323 0.323 0.323 0.355 ...
+#  $ dist         : num  5.34 5.34 5.34 5.34 7.08 ...
+#  $ dist_factored: num  10.7 10.7 10.7 10.7 14.2 ...
+#  $ mode         : Factor w/ 6 levels "Driving Car",..: 1 1 1 1 1 1 4 4 4 4 ...
+#  $ scenario     : chr  "Baseline" "Baseline" "Baseline" "Baseline" ...
+#  $ t.factor     : num  2 2 2 2 2 2 2 2 2 2 ...
+#  $ t.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
+#  $ p.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
+#  - attr(*, ".internal.selfref")=<externalptr>
 ```
 
 ## Key Figures
 ```{r message = FALSE}
 pop_baseline = nrow(pp_ref)
 pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
-  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  # [CARL - if the weight fields were correct in the  full VISTA as above, then this should also work here]
+  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  
 pop_vista_noWeight = nrow(pp_vista)
 
-summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
+summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight, na.rm=TRUE))
 
 summary = summary %>% 
   mutate(pop = c(pop_baseline, pop_vista, pop_vista_noWeight),
          avgTrip = trips/pop)
+```
 
-rm(pp_ref, pp_vista)
+```{r vista-null-weight-check}
+# check for null weights in VISTA data; there are a few -- we'll count them so we can discuss
+trips$t.weight %>% is.na() %>% table()
+```
+
+```{r clean-up}
+rm(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeight, pp_ref, pp_vista, trips_vista)
 ```
 
 ```{r echo = FALSE}
-
-# CARL - everything else from here on should now run as written, and produce
+# SP: everything else from here on should now run as written, and produce
 # some pretty tables and figures (they were created by Qin, not me!)
 
 summary%>%
@@ -594,7 +661,7 @@ ggplot(summary, aes(x = distance_bracket, y = percent, fill = mode)) +
 ## Avergae Weekly Distance Travelled Per Person
 Note that 
 
-1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)] [CARL - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
+1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that these routed distances will be calculated for VISTA]
 
 2. In MATSim, PT is time-based routing. So for the plots, we assume PT distances is equal to Car routed distance
 
@@ -636,7 +703,7 @@ ggplot(summary) +
 ## Average Weekly Time Travelled Per Person
 Note that 
 
-1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA, and (2) mesh block centroids are used (I think it's correct that the locations specified in the full VISTA version are mesh block centroids; to be confirmed)][CARL - as above - issue (1) is a question for Qin/Corin, as above; if you['re able to confirm and then delete issue (2) that would be great]*
+1. Travel time of all modes are routed travel time resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that (1) these routed distances will be calculated for VISTA]*
 
 2. PT travel time includes access, egress time, in-vehicle time, waiting time and transfer time.
 
