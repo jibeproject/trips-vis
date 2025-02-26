@@ -357,15 +357,20 @@ pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
   sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  
 pop_vista_noWeight = nrow(pp_vista)
 
-summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight))
+summary = trips %>% group_by(scenario) %>% summarise(trips=sum(t.factor*t.weight, na.rm=TRUE))
 
 summary = summary %>% 
   mutate(pop = c(pop_baseline, pop_vista, pop_vista_noWeight),
          avgTrip = trips/pop)
 ```
 
+```{r vista-null-weight-check}
+# check for null weights in VISTA data; there are a few -- we'll count them so we can discuss
+trips$t.weight %>% is.na() %>% table()
+```
+
 ```{r clean-up}
-rm(trips_ref, trips_vista, trips_vista_noWeight, pp_ref, pp_vista)
+rm(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeight, pp_ref, pp_vista, trips_vista)
 ```
 
 ```{r echo = FALSE}
