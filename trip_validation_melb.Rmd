@@ -40,49 +40,6 @@ pp_vista <- file.choose() %>% fread()
 hh_vista <- file.choose() %>% fread() 
 ```
 
-## Brief summary of VISTA context
-Could travel demand for Melbourne be better estimated if stratified by the day of week variables, or at least, weekday and weekend?  It probably is not feasible to restrict to only a single wave like 2017-18, but pooled across the full 2012-20 (notwithstanding changes to built environment over that time, a limitation), the sample size seems reasonable.  There were 23,7778 households completing travel surveys for weekdays (169,173 trips), and 8,345 households completing surveys for weekend days (52,646 trips).  There were also 4,115 trips without recorded day of week information.
-```{r vista-household-trip-date-summary}
- hh_vista %>% group_by(surveyperiod) %>% summarise(count = n())    
- hh_vista %>% group_by(travdow) %>% summarise(count = n()) 
- hh_vista %>% group_by(daytype) %>% summarise(count = n())
- hh_vista %>% group_by(surveyperiod,daytype) %>% summarise(count = n())   
-
-merged_vista <- trips_vista %>%
-  left_join(hh_vista, by = "hhid") %>%
-  left_join(pp_vista, by = "persid") 
-
-merged_vista  %>% group_by(travdow) %>% summarise(count = n()) 
-merged_vista %>% group_by(daytype) %>% summarise(count = n())
-```
-
-
-
-```{r load-weights}
-# fields for weights
-# 2025-02-26 confirmed that wdtripwgt_sa3 and wdperswgt_sa3 fields exist in the VISTA trips and persons data
-# the 'else' option of using LGA weights is used for test purposes with open data lacking the SA3 weights
-# Note: origin and destination variables are different; the full dataset has them lower case, but also has 
-# SA2 and SA3 in addition to SA4.
-if ("wdtripwgt_sa3" %in% names(trips_vista) & "wetripwgt_sa3" %in% names(trips_vista) &
-    "wdperswgt_sa3" %in% names(pp_vista) & "weperswgt_sa3" %in% names(pp_vista)) {
-  wdtripwgt <- "wdtripwgt_sa3"
-  wetripwgt <- "wetripwgt_sa3"
-  wdperswgt <- "wdperswgt_sa3"
-  weperswgt <- "weperswgt_sa3"
-  origin_area <- "origsa4_name"
-  destination_area <- "destsa4_name"
-} else {
-  wdtripwgt <- "wdtripwgt_LGA"
-  wetripwgt <- "wetripwgt_LGA"
-  wdperswgt <- "wdperswgt_LGA"
-  weperswgt <- "weperswgt_LGA"
-  origin_area <- "origSA4_name"
-  destination_area <- "destSA4_name"
-}
-
-```
-
 ## Data Preparation
 Note that 
 1. For baseline data, home-based trips and RRT are factored/weighted by 2
@@ -149,6 +106,30 @@ trips_ref <- trips_ref %>%
 
 trips_scenario_vista <- trips_vista %>% 
   mutate(scenario = "VISTA")
+
+
+# VISTA-version specific fields for weights and areas
+# 2025-02-26 confirmed that wdtripwgt_sa3 and wdperswgt_sa3 fields exist in the VISTA trips and persons data
+# the 'else' option of using LGA weights is used for test purposes with open data lacking the SA3 weights
+# Note: origin and destination variables are different; the full dataset has them lower case, but also has 
+# SA2 and SA3 in addition to SA4.
+if ("wdtripwgt_sa3" %in% names(trips_vista) & "wetripwgt_sa3" %in% names(trips_vista) &
+    "wdperswgt_sa3" %in% names(pp_vista) & "weperswgt_sa3" %in% names(pp_vista)) {
+  wdtripwgt <- "wdtripwgt_sa3"
+  wetripwgt <- "wetripwgt_sa3"
+  wdperswgt <- "wdperswgt_sa3"
+  weperswgt <- "weperswgt_sa3"
+  origin_area <- "origsa4_name"
+  destination_area <- "destsa4_name"
+} else {
+  wdtripwgt <- "wdtripwgt_LGA"
+  wetripwgt <- "wetripwgt_LGA"
+  wdperswgt <- "wdperswgt_LGA"
+  weperswgt <- "weperswgt_LGA"
+  origin_area <- "origSA4_name"
+  destination_area <- "destSA4_name"
+}
+
 
 # exclude trips outside Greater Melbourne [CARL - please check that this works as intended:
 # in particular, that the origSA4_name and destSA4_name fields are present, and that the filter 
@@ -222,7 +203,6 @@ cat(trips_scenario_vista$linkmode %>% unique() %>% sort())
 ## In full VISTA, the following modes were present:.groups
 ## "Bicycle","Jogging","Mobility Scooter","Motorcycle","Other","Public Bus","School Bus","Taxi","Train","Tram","Vehicle Driver","Vehicle Passenger","Walking"
 
-
 trips_scenario_vista <- trips_scenario_vista %>% 
   left_join(pp_vista, by = "persid") %>%
   filter(!purpose%in%c("NA","business","unknown"))%>%
@@ -244,7 +224,6 @@ trips_scenario_vista <- trips_scenario_vista %>%
                                       "HBR", 
                                       "HBO",
                                       "RRT"), 2*7, 1*7),
-    
     # [SP note: alternative version of time and dist based on time/dist
     # specified in the VISTA data] [CARL - please don't change anything here at this stage:
     # relates to query below for Qin and Corin]
@@ -333,21 +312,8 @@ trips <- bind_rows(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeigh
 #  $ p.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
 #  - attr(*, ".internal.selfref")=<externalptr> 
 
-## 'trips' fields and data structure in full VISTA data
-# > str(trips)
-# Classes 'data.table' and 'data.frame':  22468917 obs. of  11 variables:
-#  $ p.ID         : chr  "5" "5" "5" "5" ...
-#  $ t.purpose    : Factor w/ 9 levels "Home-based-work",..: 1 1 1 1 1 1 1 1 1 1 ...
-#  $ time         : num  0.162 0.162 0.162 0.162 0.178 ...
-#  $ time_factored: num  0.323 0.323 0.323 0.323 0.355 ...
-#  $ dist         : num  5.34 5.34 5.34 5.34 7.08 ...
-#  $ dist_factored: num  10.7 10.7 10.7 10.7 14.2 ...
-#  $ mode         : Factor w/ 6 levels "Driving Car",..: 1 1 1 1 1 1 4 4 4 4 ...
-#  $ scenario     : chr  "Baseline" "Baseline" "Baseline" "Baseline" ...
-#  $ t.factor     : num  2 2 2 2 2 2 2 2 2 2 ...
-#  $ t.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
-#  $ p.weight     : num  1 1 1 1 1 1 1 1 1 1 ...
-#  - attr(*, ".internal.selfref")=<externalptr>
+## 'trips' fields and data structure
+str(trips)
 ```
 
 ## Key Figures
@@ -393,7 +359,7 @@ summary%>%
 ```{r message=FALSE}
 summary = trips%>%
   group_by(scenario,t.purpose)%>%
-  summarise(count=sum(t.factor*t.weight))%>%
+  summarise(count=sum(t.factor*t.weight, na.rm=TRUE))%>%
   mutate(percent = count/sum(count)*100)
 
 ```
@@ -444,7 +410,7 @@ trips$distance_bracket <- cut(
 
 summary <- trips %>%
   group_by(scenario, distance_bracket) %>%
-  summarise(count = sum(t.factor*t.weight)) %>%
+  summarise(count = sum(t.factor*t.weight, na.rm=TRUE)) %>%
   mutate(percent = count / sum(count) * 100)
 
 ```
@@ -493,7 +459,7 @@ trips$distance_bracket <- cut(
 
 summary <- trips %>%
   group_by(distance_bracket, mode, scenario) %>%
-  summarise(count = sum(t.factor*t.weight), .groups = 'drop') %>%
+  summarise(count = sum(t.factor*t.weight, na.rm=TRUE), .groups = 'drop') %>%
   group_by(mode, scenario) %>%
   mutate(percent = count / sum(count) * 100)
 
@@ -570,7 +536,7 @@ ggplot(trips, aes(x = dist, color = scenario)) +
 ```{r message=FALSE}
 summary <- trips %>%
   group_by(scenario,mode) %>%
-  summarise(count = sum(t.factor*t.weight)) %>%
+  summarise(count = sum(t.factor*t.weight, na.rm=TRUE)) %>%
   mutate(percent = count / sum(count) * 100)
 
 ```
@@ -620,7 +586,7 @@ trips$distance_bracket <- cut(
 
 summary <- trips %>%
   group_by(distance_bracket, mode, scenario) %>%
-  summarise(count = sum(t.factor*t.weight), .groups = 'drop') %>%
+  summarise(count = sum(t.factor*t.weight, na.rm=TRUE), .groups = 'drop') %>%
   group_by(distance_bracket, scenario) %>%
   mutate(percent = count / sum(count) * 100)
 
