@@ -634,7 +634,7 @@ Note that
 ```{r message=FALSE}
 summary=trips%>%
   group_by(p.ID, mode,scenario)%>%
-  summarise(dist=sum(dist_factored*p.weight))
+  summarise(dist=sum(dist_factored*p.weight, na.rm=TRUE))
 
 summary=summary%>%
   group_by(mode, scenario)%>%
@@ -678,7 +678,7 @@ Note that
 ```{r message=FALSE}
 summary=trips%>%
   group_by(p.ID, mode,scenario)%>%
-  summarise(time=sum(time_factored*p.weight))
+  summarise(time=sum(time_factored*p.weight, na.rm=TRUE))
 
 summary=summary%>%
   group_by(mode, scenario)%>%
