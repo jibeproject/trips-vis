@@ -1,6 +1,6 @@
 ---
-title: "trip_validation_melb"
-author: "Marina, Qin, Steve, Carl"
+title: "JIBE Trip validation: Melbourne"
+author: "Marina Berdikhanova, Qin Zhang, Steve Pemberton, Carl Higgs"
 date: "`r Sys.Date()`"
 output: 
   html_document:
