@@ -1,7 +1,7 @@
 ---
 title: "trip_validation_melb"
-author: "Marina_Qin_Steve_Carl"
-date: "2025-##-##"
+author: "Marina, Qin, Steve, Carl"
+date: "`r Sys.Date()`"
 output: 
   html_document:
     code_folding: hide
@@ -28,7 +28,7 @@ cat("Loaded trips file: ", trips_file, "\n")
 ```
 
 ```{r load-jibe-persons, message=FALSE}
-pp_file <- file.choose() # e.g. pp_2021.csv
+pp_file <- file.choose() # e.g. pp_2018.csv
 pp_ref <- pp_file %>% fread()
 cat("Loaded persons file: ", pp_file, "\n")
 ```
@@ -338,6 +338,89 @@ trips <- bind_rows(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeigh
 ##  - attr(*, ".internal.selfref")=<externalptr>
 ```
 
+# Diagnostics
+## Summary of NA, infinite, and zero values by mode and scenario
+```{r diagnostics, message = FALSE}
+diagnostics <- trips %>%
+  group_by(scenario, mode) %>%
+  summarise(
+    n = n(),
+    n_time_na = sum(is.na(time)),
+    n_time_inf = sum(is.infinite(time)),
+    n_time_zero = sum(time == 0, na.rm = TRUE),
+    n_dist_na = sum(is.na(dist)),
+    n_dist_inf = sum(is.infinite(dist)),
+    n_dist_zero = sum(dist == 0, na.rm = TRUE)
+  )
+
+diagnostics %>%
+  gt() %>%
+  tab_header(title = "Summary of NA, Infinite, and Zero Values by Mode and Scenario") %>%
+  cols_label(
+    n = "Total Trips",
+    n_time_na = "NA Time",
+    n_time_inf = "Infinite Time",
+    n_time_zero = "Zero Time",
+    n_dist_na = "NA Distance",
+    n_dist_inf = "Infinite Distance",
+    n_dist_zero = "Zero Distance"
+  )
+```
+
+A fraction of trips in the baseline scenario had zero distance and/or time across the various modes. Mostly, these were for walking (1699/6290487 = 0.027%), which may be a reflection of the 14/18,672 VISTA walking trips (0.075%) that had zero recorded distance; likewise for zero distance driving trips (about 0.001% in both Vista and Baseline).  Additionally, there were 67 public transport trips recorded with infinite values for time.  
+
+Causes of outlying values should be considered. They may cause issues with the following diagnostic plots.  For example, average public transport trip time for Baseline will be infinite if the 67 inifinite values (0.003%) are not excluded from that calculation.
+
+For the following plots, we will exclude these outlying trips with zero distance or time, and infinite values for time and distance.
+```{r diagnostics-filter, message = FALSE}
+trips <- trips %>%
+  filter(
+    dist > 0,
+    time > 0,
+    !is.infinite(time),
+    !is.infinite(dist)
+  )
+```
+
+## Null trip weights in VISTA data
+```{r vista-null-weight-check}
+# check for null weights in VISTA data; there are a few -- we'll count them so we can discuss
+na_weight_summary <- trips %>%
+  group_by(scenario) %>%
+  summarise(
+    total_trips = n(),
+    na_weights = sum(is.na(t.weight)),
+    prop_na_weights = round(sum(is.na(t.weight)) / n() * 100, 4),
+    .groups = 'drop'
+  )
+
+na_weight_summary %>%
+  gt() %>%
+  tab_header(
+    title = "Summary of NA Trip Weights by Scenario"
+  ) %>%
+  cols_label(
+    scenario = "Scenario",
+    total_trips = "Total Trips",
+    na_weights = "NA Weights",
+    prop_na_weights = "% NA Weights"
+  ) %>%
+  fmt_number(
+    columns = c(total_trips, na_weights),
+    decimals = 0,
+    use_seps = TRUE
+  ) %>%
+  fmt_number(
+    columns = prop_na_weights,
+    decimals = 4
+  )
+```
+113/110105 (0.1%) of trips in the full VISTA 2012-20 data have null trip weights. These records will be excluded from the following diagnostics plots.
+```{r vista-null-weight-filter, message = FALSE}
+trips <- trips %>%
+  filter(!is.na(t.weight))  
+```
+
 ## Key Figures
 ```{r message = FALSE}
 pop_baseline = nrow(pp_ref)
@@ -352,22 +435,12 @@ summary = summary %>%
          avgTrip = trips/pop)
 ```
 
-```{r vista-null-weight-check}
-# check for null weights in VISTA data; there are a few -- we'll count them so we can discuss
-# trips$t.weight %>% is.na() %>% table()
-## .
-##    FALSE     TRUE 
-## 35416961      113
-```
 
 ```{r clean-up}
 rm(trips_ref, trips_scenario_vista, trips_scenario_vista_noWeight, pp_ref, pp_vista, trips_vista)
 ```
 
 ```{r echo = FALSE}
-# SP: everything else from here on should now run as written, and produce
-# some pretty tables and figures (they were created by Qin, not me!)
-
 summary%>%
   gt() %>%
   tab_header(
@@ -386,7 +459,6 @@ summary = trips%>%
   group_by(scenario,t.purpose)%>%
   summarise(count=sum(t.factor*t.weight, na.rm=TRUE))%>%
   mutate(percent = count/sum(count)*100)
-
 ```
 
 
@@ -529,12 +601,18 @@ ggplot(summary, aes(x = scenario , y = percent, fill = distance_bracket)) +
 ```
 
 ## Trip Length Distribution by Transport Mode
-```{r echo=FALSE, fig.width=8, fig.height=8}
-ggplot(trips, aes(x = dist, color = scenario)) +
+```{r echo=FALSE, fig.width=16, fig.height=32, dpi=300}
+ggplot(trips, aes(x = dist * 1000, color = scenario)) +
   geom_density() +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(250, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000),
+    labels = c("250", "500", "1,000", "2,000", "5,000", "10,000", "20,000", "50,000", "100,000", "200,000"),
+    limits = c(100, 200000)
+  ) +
   labs(
     title = "Trip Length Distribution",
-    x = "Distance (km)",
+    x = "Distance (metres, log2 scale)",
     color = "Scenario"
   ) +
   theme_minimal(base_size = 12) +
@@ -552,8 +630,68 @@ ggplot(trips, aes(x = dist, color = scenario)) +
     # legend.title = element_text(face = "bold"),
     legend.position = "bottom"
   ) + 
-  facet_wrap(~ mode, scales = "free") 
+  scale_y_continuous(limits = c(0, 1)) +
+  facet_grid(mode ~ ., scales = "fixed") 
 
+```
+
+
+## Median Trip Distance Comparison by Mode and Scenario
+
+```{r median-distance-summary, message=FALSE}
+# Calculate median distances by scenario and mode
+median_summary <- trips %>%
+  group_by(scenario, mode) %>%
+  summarise(
+    median_dist_km = median(dist, na.rm = TRUE),
+    median_dist_m = median(dist * 1000, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+# Reshape to compare scenarios
+median_comparison <- median_summary %>%
+  select(scenario, mode, median_dist_km) %>%
+  pivot_wider(names_from = scenario, values_from = median_dist_km) %>%
+  mutate(
+    diff_baseline_vista = Baseline - VISTA,
+    diff_baseline_vista_noweight = Baseline - VISTA_noWeight,
+    pct_diff_baseline_vista = round((Baseline - VISTA) / VISTA * 100, 1),
+    pct_diff_baseline_vista_noweight = round((Baseline - VISTA_noWeight) / VISTA_noWeight * 100, 1)
+  )
+
+# Display formatted table
+median_comparison %>%
+  gt() %>%
+  tab_header(
+    title = "Median Trip Distance Comparison by Mode",
+    subtitle = "Distances in kilometers"
+  ) %>%
+  cols_label(
+    mode = "Mode",
+    Baseline = "Baseline",
+    VISTA = "VISTA",
+    VISTA_noWeight = "VISTA (No Weight)",
+    diff_baseline_vista = "Diff: Baseline - VISTA",
+    diff_baseline_vista_noweight = "Diff: Baseline - VISTA (No Weight)",
+    pct_diff_baseline_vista = "% Diff: Baseline vs VISTA",
+    pct_diff_baseline_vista_noweight = "% Diff: Baseline vs VISTA (No Weight)"
+  ) %>%
+  fmt_number(
+    columns = c(Baseline, VISTA, VISTA_noWeight, diff_baseline_vista, diff_baseline_vista_noweight),
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = c(pct_diff_baseline_vista, pct_diff_baseline_vista_noweight),
+    decimals = 1,
+    suffix = "%"
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightblue"),
+    locations = cells_body(
+      columns = c(pct_diff_baseline_vista, pct_diff_baseline_vista_noweight),
+      rows = abs(pct_diff_baseline_vista) > 20 | abs(pct_diff_baseline_vista_noweight) > 20
+    )
+  )
 ```
 
 ## Overall Mode share
@@ -649,7 +787,7 @@ ggplot(summary, aes(x = distance_bracket, y = percent, fill = mode)) +
 
 ```
 
-## Avergae Weekly Distance Travelled Per Person
+## Average Weekly Distance Travelled Per Person
 Note that 
 
 1. Distances of all modes are routed distances resulting from MATSim. For VISTA trips, the centroids of origin mesh block and destination mesh block are used for routing. *[SP note: to be confirmed that these routed distances will be calculated for VISTA]
@@ -733,3 +871,47 @@ ggplot(summary) +
   theme(legend.position = "bottom")
 
 ```
+
+
+```{r median-distance-plot, echo=FALSE, fig.width=10, fig.height=6}
+# Visualize median distances
+median_summary %>%
+  ggplot(aes(x = mode, y = median_dist_km, fill = scenario)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label = round(median_dist_km, 2)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 3
+  ) +
+  labs(
+    title = "Median Trip Distance by Mode and Scenario",
+    x = "Transport Mode",
+    y = "Median Distance (km)",
+    fill = "Scenario"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1)))
+```
+
+# Observations
+
+A small number of trip records (< 0.1% ) were excluded from diagnostic analysis due to zero distance or time, or infinite values for time and distance. These exclusions are unlikely to significantly affect the overall analysis.  Likewise, a small number of trip records (0.1%) were excluded due to null trip weights in the VISTA data.
+
+Considering trips by purpose, the Baseline scenario proportions closely resemble those of the VISTA_noWeight dataset, albeit with more home-based recreation trips (22.2% compared to 17.6%) and fewer home-based-other and non-home based other trips (18.1% compared to 24.2%, as combined 'other').
+
+Considering trips by bracket, the Baseline scenario over estimates the proportion of trips between 1-3km (36.8% compared to 26%), and to a lesser extent 3-5km (18.2% compared to 14%), while underestimating those greater than 5km (for example, 10-20km is 6.9% instead of 14-15%).
+
+For walking, the baseline scenario underestimates trips under 1000m distance (47%, compared to 60%) while overestimating those from 1 to 3 km (49.1% compared to 37.4%).  For cycling, the baseline scenario overestimates trips under 1000m distance (27% compared to 17%) and those from 1 to 3 km (51.3% compared to 33.5%), while longer distance cycling trips are underestimated.  This may have implications for mode shift estimates in the cycling intervention, where greater potential for shifting from driving to cycling may be possible for shorter trips.
+
+The distribution of trips lengths is underestimated for all modes relative to the VISTA survey, with the exception of walking.  This was particularly the case for public transport where the median trip distance was 5.4km in the Baseline scenario, less than half the VISTA median public transport distance of 12.96 km.
+
+Mode share was approximately similar between the Baseline and VISTA scenarios; the VISTA_noWeight scenario had higher estimates for driving (50.4% compared to 44.8%), and lower for walking (16.5% compared to 18.1%).  The Baseline scenario overestimated the proportion of cycling trips by a factor of approximately 2 (3.6% compared to approximatley 1.8% in both VISTA scenarios).  
+
+Walking was under-estimated, while cycling and driving were over-estimated for short trips of less than 1000m.  
+
+The average weekly distance for vehicle travel (driving or passenger) was underestimated in the Baseline scenario (for driving, 50km compared to approximately 75km+ for VISTA), as was the distance of public transport usage (10.4 km compared to more than 16km for VISTA scenarios).  However, walking and cycling distance estimates were approximately similar (if a slight over-estimation in walking distance, 3.4km compared to 2.8km for VISTA).
