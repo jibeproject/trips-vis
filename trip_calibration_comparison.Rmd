@@ -9,12 +9,13 @@ output:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-# install.packages(c('tidyverse','data.table','gt')
+# install.packages(c('tidyverse','data.table','gt','gridExtra'))
 library(tidyverse)
 library(ggplot2)
 library(dplyr)
 library(data.table)
 library(gt)
+library(gridExtra)
 
 rm(list=ls())
 ```
@@ -25,32 +26,22 @@ rm(list=ls())
 ```{r load-pre-calibration, message=FALSE}
 # Pre-calibration trips
 # e.g. \General - JIBE working group\melbourne\simulationResults\MITO - pre-calibration - 2025-07-07\trips.csv
+cat("Please select the PRE-CALIBRATION trips file:\n")
 pre_calib_file <- file.choose()
-if (file.exists(pre_calib_file)) {
-  trips_pre <- pre_calib_file %>% fread()
-  cat("Loaded pre-calibration trips file: ", pre_calib_file, "\n")
-  cat("Records:", nrow(trips_pre), "\n")
-} else {
-  cat("Pre-calibration file not found. Please select manually.\n")
-  trips_pre <- file.choose() %>% fread()
-  cat("Loaded pre-calibration trips file manually\n")
-}
+trips_pre <- pre_calib_file %>% fread()
+cat("Loaded pre-calibration trips file: ", pre_calib_file, "\n")
+cat("Records:", nrow(trips_pre), "\n")
 ```
 
 ### Load Post-Calibration Trips
 ```{r load-post-calibration, message=FALSE}
 # Post-calibration trips
 # e.g. \General - JIBE working group\melbourne\simulationResults\MITO - calibrated - 2025-08-25\trips.csv
+cat("Please select the POST-CALIBRATION trips file:\n")
 post_calib_file <- file.choose()
-if (file.exists(post_calib_file)) {
-  trips_post <- post_calib_file %>% fread()
-  cat("Loaded post-calibration trips file: ", post_calib_file, "\n")
-  cat("Records:", nrow(trips_post), "\n")
-} else {
-  cat("Post-calibration file not found. Please select manually.\n")
-  trips_post <- file.choose() %>% fread()
-  cat("Loaded post-calibration trips file manually\n")
-}
+trips_post <- post_calib_file %>% fread()
+cat("Loaded post-calibration trips file: ", post_calib_file, "\n")
+cat("Records:", nrow(trips_post), "\n")
 ```
 
 ### Load Persons Files
@@ -265,7 +256,8 @@ trips_scenario_vista_noWeight <- trips_scenario_vista %>%
 ### Combine All Data
 ```{r combine-data, message=FALSE}
 trips <- bind_rows(trips_pre, trips_post, trips_scenario_vista, trips_scenario_vista_noWeight) %>%
-  mutate(mode = factor(mode, levels = c("Driving Car", "Car Passenger", "Public Transport", 
+  mutate(scenario = factor(scenario, levels = c("Pre-Calibration", "Post-Calibration", "VISTA", "VISTA_noWeight")),
+         mode = factor(mode, levels = c("Driving Car", "Car Passenger", "Public Transport", 
                                         "Walking", "Cycling", "Other")),
          t.purpose = case_when(
            t.purpose == "HBW" ~ "Home-based-work",
@@ -377,6 +369,7 @@ mode_summary <- trips %>%
 mode_comparison <- mode_summary %>%
   select(scenario, mode, percent) %>%
   pivot_wider(names_from = scenario, values_from = percent) %>%
+  select(mode, `Pre-Calibration`, `Post-Calibration`, VISTA, VISTA_noWeight) %>%
   mutate(
     improvement_pre_to_post = abs(`Post-Calibration` - VISTA) - abs(`Pre-Calibration` - VISTA),
     improvement_direction = case_when(
@@ -420,7 +413,10 @@ ggplot(mode_summary, aes(x = mode, y = percent, fill = scenario)) +
   theme_minimal(base_size = 12) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom") +
-  scale_fill_brewer(type = "qual", palette = "Set2")
+  scale_fill_manual(values = c("Pre-Calibration" = "#E6F2FF", 
+                               "Post-Calibration" = "#4A90E2", 
+                               "VISTA" = "#FF6B6B", 
+                               "VISTA_noWeight" = "#FFB6C1"))
 ```
 
 ## Trip Length Distribution Comparison
@@ -446,7 +442,9 @@ ggplot(trips_main, aes(x = dist * 1000, color = scenario)) +
   theme(legend.position = "bottom") + 
   scale_y_continuous(limits = c(0, 1)) +
   facet_grid(mode ~ ., scales = "fixed") +
-  scale_color_brewer(type = "qual", palette = "Set1")
+  scale_color_manual(values = c("Pre-Calibration" = "#87CEEB", 
+                                "Post-Calibration" = "#4A90E2", 
+                                "VISTA" = "#FF6B6B"))
 ```
 
 ## Median Distance Comparison
@@ -461,6 +459,7 @@ median_summary <- trips %>%
 # Reshape to compare scenarios
 median_comparison <- median_summary %>%
   pivot_wider(names_from = scenario, values_from = median_dist_km) %>%
+  select(mode, `Pre-Calibration`, `Post-Calibration`, VISTA, VISTA_noWeight) %>%
   mutate(
     # Calculate how close each calibration is to VISTA
     pre_calib_diff = abs(`Pre-Calibration` - VISTA),
@@ -540,7 +539,9 @@ median_summary %>%
     legend.position = "bottom"
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
-  scale_fill_brewer(type = "qual", palette = "Set1")
+  scale_fill_manual(values = c("Pre-Calibration" = "#E6F2FF", 
+                               "Post-Calibration" = "#4A90E2", 
+                               "VISTA" = "#FF6B6B"))
 ```
 
 ## Average Weekly Distance and Time Per Person
@@ -585,7 +586,9 @@ p1 <- dist_summary %>%
   coord_flip() +
   theme_minimal(base_size = 11) +
   theme(legend.position = "bottom") +
-  scale_fill_brewer(type = "qual", palette = "Set1")
+  scale_fill_manual(values = c("Pre-Calibration" = "#E6F2FF", 
+                               "Post-Calibration" = "#4A90E2", 
+                               "VISTA" = "#FF6B6B"))
 
 # Time plot  
 p2 <- time_summary %>%
@@ -600,10 +603,11 @@ p2 <- time_summary %>%
   coord_flip() +
   theme_minimal(base_size = 11) +
   theme(legend.position = "bottom") +
-  scale_fill_brewer(type = "qual", palette = "Set1")
+  scale_fill_manual(values = c("Pre-Calibration" = "#E6F2FF", 
+                               "Post-Calibration" = "#4A90E2", 
+                               "VISTA" = "#FF6B6B"))
 
 # Combine plots
-library(gridExtra)
 grid.arrange(p1, p2, ncol = 1)
 ```
 
