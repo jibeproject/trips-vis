@@ -1,0 +1,707 @@
+---
+title: "Trip Calibration Comparison: Pre vs Post vs VISTA"
+author: "Carl"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# install.packages(c('tidyverse','data.table','gt')
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(data.table)
+library(gt)
+
+rm(list=ls())
+```
+
+## Load Data Files
+
+### Load Pre-Calibration Trips
+```{r load-pre-calibration, message=FALSE}
+# Pre-calibration trips
+# e.g. \General - JIBE working group\melbourne\simulationResults\MITO - pre-calibration - 2025-07-07\trips.csv
+pre_calib_file <- file.choose()
+if (file.exists(pre_calib_file)) {
+  trips_pre <- pre_calib_file %>% fread()
+  cat("Loaded pre-calibration trips file: ", pre_calib_file, "\n")
+  cat("Records:", nrow(trips_pre), "\n")
+} else {
+  cat("Pre-calibration file not found. Please select manually.\n")
+  trips_pre <- file.choose() %>% fread()
+  cat("Loaded pre-calibration trips file manually\n")
+}
+```
+
+### Load Post-Calibration Trips
+```{r load-post-calibration, message=FALSE}
+# Post-calibration trips
+# e.g. \General - JIBE working group\melbourne\simulationResults\MITO - calibrated - 2025-08-25\trips.csv
+post_calib_file <- file.choose()
+if (file.exists(post_calib_file)) {
+  trips_post <- post_calib_file %>% fread()
+  cat("Loaded post-calibration trips file: ", post_calib_file, "\n")
+  cat("Records:", nrow(trips_post), "\n")
+} else {
+  cat("Post-calibration file not found. Please select manually.\n")
+  trips_post <- file.choose() %>% fread()
+  cat("Loaded post-calibration trips file manually\n")
+}
+```
+
+### Load Persons Files
+```{r load-persons, message=FALSE}
+# Load persons file (assuming same for both scenarios)
+cat("Please select the persons file (pp_*.csv):\n")
+pp_file <- file.choose()
+pp_ref <- pp_file %>% fread()
+cat("Loaded persons file: ", pp_file, "\n")
+cat("Records:", nrow(pp_ref), "\n")
+```
+
+### Load VISTA Reference Data
+```{r load-vista-trips, message=FALSE}
+cat("Please select VISTA trips file (T_VISTA_*.csv):\n")
+trips_vista_file <- file.choose()
+trips_vista <- trips_vista_file %>% fread() 
+cat("Loaded VISTA trips file: ", trips_vista_file, "\n")
+cat("Records:", nrow(trips_vista), "\n")
+```
+
+```{r load-vista-persons, message=FALSE}
+cat("Please select VISTA persons file (P_VISTA_*.csv):\n")
+pp_vista_file <- file.choose()
+pp_vista <- pp_vista_file %>% fread() 
+cat("Loaded VISTA persons file: ", pp_vista_file, "\n")
+cat("Records:", nrow(pp_vista), "\n")
+```
+
+```{r load-vista-households, message=FALSE}
+cat("Please select VISTA households file (H_VISTA_*.csv):\n")
+hh_vista_file <- file.choose()
+hh_vista <- hh_vista_file %>% fread() 
+cat("Loaded VISTA households file: ", hh_vista_file, "\n")
+cat("Records:", nrow(hh_vista), "\n")
+```
+
+## Data Preparation
+
+### Process Pre-Calibration Data
+```{r prep-pre-calibration, message=FALSE}
+trips_pre <- trips_pre %>% 
+  mutate(scenario = "Pre-Calibration") %>%
+  mutate(mode = case_when(
+           mode == "autoDriver" ~ "Driving Car",
+           mode == "autoPassenger" ~ "Car Passenger",
+           mode == "pt" ~ "Public Transport",
+           mode == "walk" ~ "Walking",
+           mode == "bicycle" ~ "Cycling",
+           TRUE ~ "Other"),
+         t.factor = if_else(t.purpose %in% c("HBW", "HBE", "HBA", "HBS", "HBR", "HBO", "RRT"), 2, 1),
+         time_walk = time_walk/60,
+         time_bike = time_bike/60,
+         time_auto = time_auto/60,
+         time_pt = time_pt/60,
+         time = case_when(mode=="Cycling"~time_bike,
+                          mode=="Walking"~time_walk,
+                          mode=="Public Transport"~time_pt,
+                          mode=="Driving Car"~time_auto,
+                          mode=="Car Passenger"~time_auto),
+         dist = case_when(mode=="Cycling"~t.distance_bike,
+                          mode=="Walking"~t.distance_walk,
+                          mode=="Public Transport"~t.distance_auto,
+                          mode=="Driving Car"~t.distance_auto,
+                          mode=="Car Passenger"~t.distance_auto),
+         time_factored = time * t.factor,
+         dist_factored = dist * t.factor,
+         t.weight = 1,
+         p.weight = 1,
+         p.ID = as.character(p.ID)) %>% 
+  select(p.ID, t.purpose, time, time_factored, dist, dist_factored, mode,
+         scenario, t.factor, t.weight, p.weight)
+```
+
+### Process Post-Calibration Data
+```{r prep-post-calibration, message=FALSE}
+trips_post <- trips_post %>% 
+  mutate(scenario = "Post-Calibration") %>%
+  mutate(mode = case_when(
+           mode == "autoDriver" ~ "Driving Car",
+           mode == "autoPassenger" ~ "Car Passenger",
+           mode == "pt" ~ "Public Transport",
+           mode == "walk" ~ "Walking",
+           mode == "bicycle" ~ "Cycling",
+           TRUE ~ "Other"),
+         t.factor = if_else(t.purpose %in% c("HBW", "HBE", "HBA", "HBS", "HBR", "HBO", "RRT"), 2, 1),
+         time_walk = time_walk/60,
+         time_bike = time_bike/60,
+         time_auto = time_auto/60,
+         time_pt = time_pt/60,
+         time = case_when(mode=="Cycling"~time_bike,
+                          mode=="Walking"~time_walk,
+                          mode=="Public Transport"~time_pt,
+                          mode=="Driving Car"~time_auto,
+                          mode=="Car Passenger"~time_auto),
+         dist = case_when(mode=="Cycling"~t.distance_bike,
+                          mode=="Walking"~t.distance_walk,
+                          mode=="Public Transport"~t.distance_auto,
+                          mode=="Driving Car"~t.distance_auto,
+                          mode=="Car Passenger"~t.distance_auto),
+         time_factored = time * t.factor,
+         dist_factored = dist * t.factor,
+         t.weight = 1,
+         p.weight = 1,
+         p.ID = as.character(p.ID)) %>% 
+  select(p.ID, t.purpose, time, time_factored, dist, dist_factored, mode,
+         scenario, t.factor, t.weight, p.weight)
+```
+
+### Process VISTA Data
+```{r prep-vista, message=FALSE}
+trips_scenario_vista <- trips_vista %>% 
+  mutate(scenario = "VISTA")
+
+# VISTA-version specific fields for weights and areas
+if ("wdtripwgt_sa3" %in% names(trips_vista) & "wetripwgt_sa3" %in% names(trips_vista) &
+    "wdperswgt_sa3" %in% names(pp_vista) & "weperswgt_sa3" %in% names(pp_vista)) {
+  wdtripwgt <- "wdtripwgt_sa3"
+  wetripwgt <- "wetripwgt_sa3"
+  wdperswgt <- "wdperswgt_sa3"
+  weperswgt <- "weperswgt_sa3"
+  origin_area <- "origsa4_name"
+  destination_area <- "destsa4_name"
+} else {
+  wdtripwgt <- "wdtripwgt_LGA"
+  wetripwgt <- "wetripwgt_LGA"
+  wdperswgt <- "wdperswgt_LGA"
+  weperswgt <- "weperswgt_LGA"
+  origin_area <- "origSA4_name"
+  destination_area <- "destSA4_name"
+}
+
+# Filter trips within Greater Melbourne
+trips_scenario_vista <- trips_scenario_vista %>%
+  filter(!!sym(origin_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
+                             "Melbourne - Inner South", "Melbourne - North East",
+                             "Melbourne - North West", "Melbourne - Outer East",
+                             "Melbourne - South East", "Melbourne - West",
+                             "Mornington Peninsula") &
+           !!sym(destination_area) %in% c("Melbourne - Inner", "Melbourne - Inner East",
+                             "Melbourne - Inner South", "Melbourne - North East",
+                             "Melbourne - North West", "Melbourne - Outer East",
+                             "Melbourne - South East", "Melbourne - West",
+                             "Mornington Peninsula"))
+
+# Clean trip purposes and assign purpose
+trips_scenario_vista <- trips_scenario_vista %>%
+  mutate(origplace1 = ifelse((is.na(origplace1) | str_detect(origplace1, "Unknown")) & 
+                               origpurp1 == "Work Related", "Workplace", origplace1),
+         destplace1 = ifelse((is.na(destplace1) | str_detect(destplace1, "Unknown")) & 
+                               destpurp1 == "Work Related", "Workplace", destplace1),
+         origpurp1 = ifelse((is.na(origpurp1) | str_detect(origpurp1, "Unknown")) & 
+                              origplace1 == "Workplace", "Work Related", origpurp1),
+         destpurp1 = ifelse((is.na(destpurp1) | str_detect(destpurp1, "Unknown")) & 
+                              destplace1 == "Workplace", "Work Related", destpurp1))
+
+# Assign purpose
+trips_scenario_vista <- trips_scenario_vista %>%
+  mutate(purpose = case_when(
+    origpurp2 == "Employer's Business" | destpurp2 == "Employer's Business" ~ "business",
+    origpurp1 %in% c("Unknown Purpose (at start of day)", "Not Stated") | 
+      destpurp1 %in% c("NA", "Not Stated") ~ "unknown",
+    origpurp1 == "At Home" & destpurp1 == "At or Go Home" ~ "RRT",
+    origpurp1 == "At Home" ~ case_when(
+      destpurp1 == "Work Related" ~ "HBW",
+      destpurp1 == "Education" ~ "HBE",
+      destpurp1 == "Buy Something" ~ "HBS",
+      destpurp1 == "Recreational" ~ "HBR",
+      destpurp1 == "Other Purpose" ~ "HBO",
+      destpurp1 %in% c("Accompany Someone","Pick-up or Drop-off Someone") ~ "HBA",
+      destplace1 == "Workplace" ~ "HBW",
+      destplace1 == "Place of Education" ~ "HBE",
+      destplace1 == "Shops" ~ "HBS",
+      destplace1 %in% c("Recreational Place","Natural Feature", "Social Place") ~ "HBR",
+      TRUE ~ "HBO"),
+    destpurp1 == "At or Go Home" ~ "NA",
+    origpurp1 == "Work Related" | destpurp1 == "Work Related" ~ "NHBW",
+    TRUE ~ "NHBO"))
+
+# Process VISTA trips
+trips_scenario_vista <- trips_scenario_vista %>% 
+  left_join(pp_vista, by = "persid") %>%
+  filter(!purpose %in% c("NA","business","unknown")) %>%
+  mutate(
+    mode = case_when(
+      linkmode == "Vehicle Driver" ~ "Driving Car",
+      linkmode == "Vehicle Passenger" ~ "Car Passenger",
+      linkmode %in% c("Public Bus", "School Bus", "Train", "Tram") ~ "Public Transport",
+      linkmode == "Walking" ~ "Walking",
+      linkmode == "Bicycle" ~ "Cycling",
+      TRUE ~ "Other"),
+    t.factor = if_else(purpose %in% c("HBW", "HBE", "HBA", "HBS", "HBR", "HBO", "RRT"), 2*7, 1*7),
+    time = triptime / 60,
+    dist = cumdist,
+    time_factored = time * t.factor,
+    dist_factored = dist * t.factor,
+    t.weight = ifelse(is.na(.data[[wdtripwgt]]) | .data[[wdtripwgt]] == "", 
+                      .data[[wetripwgt]], .data[[wdtripwgt]]),
+    p.weight = ifelse(is.na(.data[[wdperswgt]]) | .data[[wdperswgt]] == "", 
+                      .data[[weperswgt]], .data[[wdperswgt]]),
+    t.weight = as.numeric(gsub(",", "", t.weight)),
+    p.weight = as.numeric(gsub(",", "", p.weight))) %>%
+  filter(!mode %in% c("Other")) %>%
+  select(p.ID = persid, t.purpose = purpose, time, time_factored, dist, 
+         dist_factored, mode, scenario, t.factor, t.weight, p.weight)
+
+# Create VISTA_noWeight version
+trips_scenario_vista_noWeight <- trips_scenario_vista %>%
+  mutate(t.weight = 1, p.weight = 1, scenario = "VISTA_noWeight")
+```
+
+### Combine All Data
+```{r combine-data, message=FALSE}
+trips <- bind_rows(trips_pre, trips_post, trips_scenario_vista, trips_scenario_vista_noWeight) %>%
+  mutate(mode = factor(mode, levels = c("Driving Car", "Car Passenger", "Public Transport", 
+                                        "Walking", "Cycling", "Other")),
+         t.purpose = case_when(
+           t.purpose == "HBW" ~ "Home-based-work",
+           t.purpose == "HBE" ~ "Home-based-education",
+           t.purpose == "HBA" ~ "Home-based-accompanying",
+           t.purpose == "HBS" ~ "Home-based-shopping",
+           t.purpose == "HBR" ~ "Home-based-recreation",
+           t.purpose == "HBO" ~ "Home-based-other",
+           t.purpose == "NHBO" ~ "Non-home-based-other",
+           t.purpose == "NHBW" ~ "Non-home-based-work",
+           t.purpose == "RRT" ~ "Recreational round trip",
+           TRUE ~ NA_character_),
+         t.purpose = factor(t.purpose, levels = c("Home-based-work", "Home-based-education", 
+                                                  "Home-based-accompanying", "Home-based-shopping", 
+                                                  "Home-based-recreation", "Home-based-other", 
+                                                  "Non-home-based-other", "Non-home-based-work",
+                                                  "Recreational round trip")))
+
+cat("Combined dataset created with", nrow(trips), "records\n")
+cat("Scenarios:", unique(trips$scenario), "\n")
+```
+
+## Data Quality Diagnostics
+
+### Summary of Data Issues
+```{r diagnostics, message = FALSE}
+diagnostics <- trips %>%
+  group_by(scenario, mode) %>%
+  summarise(
+    n = n(),
+    n_time_na = sum(is.na(time)),
+    n_time_inf = sum(is.infinite(time)),
+    n_time_zero = sum(time == 0, na.rm = TRUE),
+    n_dist_na = sum(is.na(dist)),
+    n_dist_inf = sum(is.infinite(dist)),
+    n_dist_zero = sum(dist == 0, na.rm = TRUE),
+    .groups = 'drop'
+  )
+
+diagnostics %>%
+  gt() %>%
+  tab_header(title = "Data Quality Summary by Mode and Scenario") %>%
+  cols_label(
+    n = "Total Trips",
+    n_time_na = "NA Time",
+    n_time_inf = "Infinite Time", 
+    n_time_zero = "Zero Time",
+    n_dist_na = "NA Distance",
+    n_dist_inf = "Infinite Distance",
+    n_dist_zero = "Zero Distance"
+  )
+```
+
+### Filter Out Problem Records
+```{r filter-problems, message = FALSE}
+trips <- trips %>%
+  filter(
+    dist > 0,
+    time > 0,
+    !is.infinite(time),
+    !is.infinite(dist),
+    !is.na(t.weight)
+  )
+
+cat("After filtering, dataset has", nrow(trips), "records\n")
+```
+
+## Key Population Figures
+```{r key-figures, message = FALSE}
+pop_baseline = nrow(pp_ref)
+pop_vista = sum(as.numeric(gsub(",", "", pp_vista[[wdperswgt]])), na.rm = T) +
+  sum(as.numeric(gsub(",", "", pp_vista[[weperswgt]])), na.rm = T)  
+pop_vista_noWeight = nrow(pp_vista)
+
+summary = trips %>% 
+  group_by(scenario) %>% 
+  summarise(trips = sum(t.factor * t.weight, na.rm = TRUE), .groups = 'drop')
+
+summary = summary %>% 
+  mutate(pop = case_when(
+    scenario %in% c("Pre-Calibration", "Post-Calibration") ~ pop_baseline,
+    scenario == "VISTA" ~ pop_vista,
+    scenario == "VISTA_noWeight" ~ pop_vista_noWeight),
+    avgTrip = trips/pop)
+
+summary %>%
+  gt() %>%
+  tab_header(title = "Key Figures by Scenario") %>%
+  cols_label(
+    scenario = "Scenario",
+    trips = "Total Trips per Week",
+    pop = "Total Population",
+    avgTrip = "Weekly Trip Rate Per Person"
+  ) %>%
+  fmt_number(columns = c(trips, pop), decimals = 0, use_seps = TRUE) %>%
+  fmt_number(columns = avgTrip, decimals = 2)
+```
+
+## Mode Share Comparison
+
+```{r mode-share, message=FALSE}
+mode_summary <- trips %>%
+  group_by(scenario, mode) %>%
+  summarise(count = sum(t.factor * t.weight, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(scenario) %>%
+  mutate(percent = count / sum(count) * 100)
+
+# Mode share table
+mode_comparison <- mode_summary %>%
+  select(scenario, mode, percent) %>%
+  pivot_wider(names_from = scenario, values_from = percent) %>%
+  mutate(
+    improvement_pre_to_post = abs(`Post-Calibration` - VISTA) - abs(`Pre-Calibration` - VISTA),
+    improvement_direction = case_when(
+      improvement_pre_to_post < -1 ~ "Improved",
+      improvement_pre_to_post > 1 ~ "Worsened", 
+      TRUE ~ "Similar"
+    )
+  )
+
+mode_comparison %>%
+  gt() %>%
+  tab_header(title = "Mode Share Comparison (%)", 
+             subtitle = "Improvement shows whether calibration moved closer to VISTA") %>%
+  fmt_number(columns = c(`Pre-Calibration`, `Post-Calibration`, VISTA, VISTA_noWeight), 
+             decimals = 1) %>%
+  fmt_number(columns = improvement_pre_to_post, decimals = 2) %>%
+  tab_style(
+    style = cell_fill(color = "lightgreen"),
+    locations = cells_body(
+      columns = improvement_direction,
+      rows = improvement_direction == "Improved"
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightcoral"),
+    locations = cells_body(
+      columns = improvement_direction,
+      rows = improvement_direction == "Worsened"
+    )
+  )
+```
+
+```{r mode-share-plot, echo=FALSE, fig.width=10, fig.height=6}
+ggplot(mode_summary, aes(x = mode, y = percent, fill = scenario)) +
+  geom_col(position = "dodge") +
+  geom_text(aes(label = paste0(round(percent, 1), "%")),
+            position = position_dodge(width = 0.9),
+            vjust = -0.3, size = 3) +
+  labs(title = "Mode Share Comparison: Pre vs Post Calibration vs VISTA",
+       x = "Transport Mode", y = "Percentage (%)", fill = "Scenario") +
+  theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.position = "bottom") +
+  scale_fill_brewer(type = "qual", palette = "Set2")
+```
+
+## Trip Length Distribution Comparison
+
+```{r trip-length-plot, echo=FALSE, fig.width=16, fig.height=20, dpi=300}
+# Filter to main scenarios for clarity
+trips_main <- trips %>% filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA"))
+
+ggplot(trips_main, aes(x = dist * 1000, color = scenario)) +
+  geom_density(alpha = 0.7, size = 1) +
+  scale_x_continuous(
+    trans = "log2",
+    breaks = c(250, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000),
+    labels = c("250", "500", "1,000", "2,000", "5,000", "10,000", "20,000", "50,000", "100,000", "200,000"),
+    limits = c(100, 200000)
+  ) +
+  labs(
+    title = "Trip Length Distribution: Pre vs Post Calibration vs VISTA",
+    x = "Distance (metres, log2 scale)",
+    color = "Scenario"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(legend.position = "bottom") + 
+  scale_y_continuous(limits = c(0, 1)) +
+  facet_grid(mode ~ ., scales = "fixed") +
+  scale_color_brewer(type = "qual", palette = "Set1")
+```
+
+## Median Distance Comparison
+
+```{r median-distance-summary, message=FALSE}
+# Calculate median distances by scenario and mode
+median_summary <- trips %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA", "VISTA_noWeight")) %>%
+  group_by(scenario, mode) %>%
+  summarise(median_dist_km = median(dist, na.rm = TRUE), .groups = 'drop')
+
+# Reshape to compare scenarios
+median_comparison <- median_summary %>%
+  pivot_wider(names_from = scenario, values_from = median_dist_km) %>%
+  mutate(
+    # Calculate how close each calibration is to VISTA
+    pre_calib_diff = abs(`Pre-Calibration` - VISTA),
+    post_calib_diff = abs(`Post-Calibration` - VISTA),
+    improvement = pre_calib_diff - post_calib_diff,
+    pct_improvement = round((improvement / pre_calib_diff) * 100, 1),
+    improvement_status = case_when(
+      improvement > 0.5 ~ "Improved",
+      improvement < -0.5 ~ "Worsened",
+      TRUE ~ "Similar"
+    )
+  )
+
+# Display formatted table
+median_comparison %>%
+  gt() %>%
+  tab_header(
+    title = "Median Trip Distance Comparison (km)",
+    subtitle = "Positive improvement means post-calibration is closer to VISTA"
+  ) %>%
+  cols_label(
+    mode = "Mode",
+    `Pre-Calibration` = "Pre-Calib",
+    `Post-Calibration` = "Post-Calib", 
+    VISTA = "VISTA",
+    VISTA_noWeight = "VISTA (No Wt)",
+    improvement = "Improvement (km)",
+    pct_improvement = "% Improvement",
+    improvement_status = "Status"
+  ) %>%
+  fmt_number(
+    columns = c(`Pre-Calibration`, `Post-Calibration`, VISTA, VISTA_noWeight, improvement),
+    decimals = 2
+  ) %>%
+  fmt_number(
+    columns = pct_improvement,
+    decimals = 1,
+    suffix = "%"
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightgreen"),
+    locations = cells_body(
+      columns = improvement_status,
+      rows = improvement_status == "Improved"
+    )
+  ) %>%
+  tab_style(
+    style = cell_fill(color = "lightcoral"),
+    locations = cells_body(
+      columns = improvement_status,
+      rows = improvement_status == "Worsened"
+    )
+  )
+```
+
+```{r median-distance-plot, echo=FALSE, fig.width=12, fig.height=8}
+# Visualize median distances
+median_summary %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA")) %>%
+  ggplot(aes(x = mode, y = median_dist_km, fill = scenario)) +
+  geom_col(position = "dodge") +
+  geom_text(
+    aes(label = round(median_dist_km, 2)),
+    position = position_dodge(width = 0.9),
+    vjust = -0.3,
+    size = 3
+  ) +
+  labs(
+    title = "Median Trip Distance by Mode and Scenario",
+    x = "Transport Mode",
+    y = "Median Distance (km)",
+    fill = "Scenario"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom"
+  ) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.1))) +
+  scale_fill_brewer(type = "qual", palette = "Set1")
+```
+
+## Average Weekly Distance and Time Per Person
+
+```{r avg-weekly-distance, message=FALSE}
+dist_summary <- trips %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA", "VISTA_noWeight")) %>%
+  group_by(p.ID, mode, scenario) %>%
+  summarise(dist = sum(dist_factored * p.weight, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(mode, scenario) %>%
+  summarise(totalDist = sum(dist), .groups = 'drop') %>% 
+  mutate(avgDist = case_when(
+    scenario %in% c("Pre-Calibration", "Post-Calibration") ~ totalDist / pop_baseline,
+    scenario == "VISTA" ~ totalDist / pop_vista,
+    scenario == "VISTA_noWeight" ~ totalDist / pop_vista_noWeight
+  ))
+
+time_summary <- trips %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA", "VISTA_noWeight")) %>%
+  group_by(p.ID, mode, scenario) %>%
+  summarise(time = sum(time_factored * p.weight, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(mode, scenario) %>%
+  summarise(totalTime = sum(time), .groups = 'drop') %>% 
+  mutate(avgTime = case_when(
+    scenario %in% c("Pre-Calibration", "Post-Calibration") ~ totalTime / pop_baseline * 60,
+    scenario == "VISTA" ~ totalTime / pop_vista * 60,
+    scenario == "VISTA_noWeight" ~ totalTime / pop_vista_noWeight * 60
+  ))
+```
+
+```{r avg-weekly-plots, echo=FALSE, fig.width=12, fig.height=10}
+# Distance plot
+p1 <- dist_summary %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA")) %>%
+  ggplot(aes(x = mode, y = avgDist, fill = scenario)) +
+  geom_col(position = "dodge2") +
+  geom_text(aes(label = round(avgDist, 1)), 
+            position = position_dodge(width = 0.9), 
+            hjust = -0.2, vjust = 0.5, size = 3) +
+  labs(title = "Average Weekly Distance (km) by Mode Per Person",
+       fill = "Scenario", x = "", y = "km") +
+  coord_flip() +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom") +
+  scale_fill_brewer(type = "qual", palette = "Set1")
+
+# Time plot  
+p2 <- time_summary %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA")) %>%
+  ggplot(aes(x = mode, y = avgTime, fill = scenario)) +
+  geom_col(position = "dodge2") +
+  geom_text(aes(label = round(avgTime, 1)), 
+            position = position_dodge(width = 0.9), 
+            hjust = -0.2, vjust = 0.5, size = 3) +
+  labs(title = "Average Weekly Time (minutes) by Mode Per Person",
+       fill = "Scenario", x = "", y = "minutes") +
+  coord_flip() +
+  theme_minimal(base_size = 11) +
+  theme(legend.position = "bottom") +
+  scale_fill_brewer(type = "qual", palette = "Set1")
+
+# Combine plots
+library(gridExtra)
+grid.arrange(p1, p2, ncol = 1)
+```
+
+## Trip Purpose Distribution
+
+```{r trip-purpose, message=FALSE}
+purpose_summary <- trips %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA", "VISTA_noWeight")) %>%
+  group_by(scenario, t.purpose) %>%
+  summarise(count = sum(t.factor * t.weight, na.rm = TRUE), .groups = 'drop') %>%
+  group_by(scenario) %>%
+  mutate(percent = count / sum(count) * 100)
+```
+
+```{r trip-purpose-plot, echo=FALSE, fig.width=12, fig.height=8}
+purpose_summary %>%
+  filter(scenario %in% c("Pre-Calibration", "Post-Calibration", "VISTA")) %>%
+  ggplot(aes(x = scenario, y = percent, fill = t.purpose)) +
+  geom_bar(stat = "identity", position = "fill") +
+  geom_text(
+    aes(label = ifelse(percent > 2, paste0(round(percent, 1), "%"), "")),
+    position = position_fill(vjust = 0.5), 
+    color = "white", size = 3
+  ) +
+  labs(
+    title = "Trip Purpose Distribution",
+    y = "Proportion (%)", x = "Scenario", fill = "Purpose"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    axis.text.x = element_text(face = "bold"),
+    legend.position = "bottom"
+  ) + 
+  guides(fill = guide_legend(nrow = 3)) + 
+  coord_flip() + 
+  scale_y_reverse()
+```
+
+## Summary and Observations
+
+```{r summary-stats, echo=FALSE}
+# Calculate summary improvement metrics
+mode_improvements <- median_comparison %>%
+  summarise(
+    modes_improved = sum(improvement_status == "Improved"),
+    modes_worsened = sum(improvement_status == "Worsened"),
+    modes_similar = sum(improvement_status == "Similar"),
+    avg_improvement = round(mean(improvement, na.rm = TRUE), 2),
+    total_modes = n()
+  )
+
+cat("## Calibration Impact Summary\n\n")
+cat("Out of", mode_improvements$total_modes, "transport modes:\n")
+cat("- **Improved** (closer to VISTA):", mode_improvements$modes_improved, "modes\n")
+cat("- **Worsened** (further from VISTA):", mode_improvements$modes_worsened, "modes\n") 
+cat("- **Similar** (no significant change):", mode_improvements$modes_similar, "modes\n")
+cat("- **Average improvement in median distance**:", mode_improvements$avg_improvement, "km\n\n")
+
+# Show which modes improved/worsened
+improved_modes <- median_comparison %>% 
+  filter(improvement_status == "Improved") %>% 
+  pull(mode)
+worsened_modes <- median_comparison %>% 
+  filter(improvement_status == "Worsened") %>% 
+  pull(mode)
+
+if(length(improved_modes) > 0) {
+  cat("**Modes that improved:** ", paste(improved_modes, collapse = ", "), "\n\n")
+}
+if(length(worsened_modes) > 0) {
+  cat("**Modes that worsened:** ", paste(worsened_modes, collapse = ", "), "\n\n")
+}
+```
+
+### Key Findings
+
+The calibration process shows measurable impacts on trip generation and distribution patterns:
+
+1. **Mode Share**: Compare the mode share improvements between pre- and post-calibration scenarios relative to VISTA reference data.
+
+2. **Trip Length Distributions**: The density plots show how calibration affected the distribution of trip lengths across different transport modes.
+
+3. **Median Distances**: The median distance analysis provides a clear metric for evaluating calibration success, showing which modes moved closer to or further from VISTA observations.
+
+4. **Trip Purposes**: Changes in trip purpose distribution indicate how calibration affected different types of travel behavior.
+
+5. **Weekly Travel Patterns**: Average weekly distance and time per person show the overall impact on travel demand by mode.
+
+### Recommendations for Further Analysis
+
+1. **Detailed Mode Analysis**: Focus on modes that worsened during calibration to understand the trade-offs made.
+
+2. **Spatial Analysis**: Consider spatial distribution of improvements/deteriorations across different areas of Melbourne.
+
+3. **Time-of-Day Analysis**: Examine whether calibration impacts varied by time of day or day of week.
+
+4. **Distance Band Analysis**: Look at specific distance brackets where improvements were most/least effective.
+
+---
+
+*Analysis completed on `r Sys.Date()`*
