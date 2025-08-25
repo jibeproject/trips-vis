@@ -684,27 +684,24 @@ if(length(worsened_modes) > 0) {
 
 ### Key Findings
 
-The calibration process shows measurable impacts on trip generation and distribution patterns:
+Since we were specifically calibrating the trip distribution, its not surprising that on the whole this has improved.  However, overall, mode share estimates appear to have somehow worsed.
 
-1. **Mode Share**: Compare the mode share improvements between pre- and post-calibration scenarios relative to VISTA reference data.
+## Trip distribution by purpose (improved)
 
-2. **Trip Length Distributions**: The density plots show how calibration affected the distribution of trip lengths across different transport modes.
+Trip distribution post-calibration now more closely matches VISTA for all modes, except for walking.  This is because trip distances were previously under estimated; now they have increased and are approximately matched.  However, walking trips are the exception: these were previously over-estimated, and now this is slightly more the case; although, the differences are small.  I think with regards to trip distribution, we can consider calibration successful:
 
-3. **Median Distances**: The median distance analysis provides a clear metric for evaluating calibration success, showing which modes moved closer to or further from VISTA observations.
+## Mode share (worsened)
 
-4. **Trip Purposes**: Changes in trip purpose distribution indicate how calibration affected different types of travel behavior.
+Although we didn't directly calibrate mode choice, by shifting trips to longer distances this indirectly influences mode choice; for the worse, it seems, despite closer match to VISTA survey data.
 
-5. **Weekly Travel Patterns**: Average weekly distance and time per person show the overall impact on travel demand by mode.
+In short, fewer people choose to walk, and more people choose to use PT or cycle; car mode share seems similar.
 
-### Recommendations for Further Analysis
+## Weekly trip distance and time estimates per person
 
-1. **Detailed Mode Analysis**: Focus on modes that worsened during calibration to understand the trade-offs made.
-
-2. **Spatial Analysis**: Consider spatial distribution of improvements/deteriorations across different areas of Melbourne.
-
-3. **Time-of-Day Analysis**: Examine whether calibration impacts varied by time of day or day of week.
-
-4. **Distance Band Analysis**: Look at specific distance brackets where improvements were most/least effective.
+- Estimates of person-distance and time spent using different modes were improved post-calibration  for driving/passenger car modes (although still under-estimated)
+- Public transport distance was over-estimated, but time was under-estimated (and an improvement on pre-calibration)
+- walking distance estimates were improved, but time was over-estimated (make sense perhaps; we over-estimate the length of walking trips)
+- cycling distance and time were over-estimated (slightly under-estimated pre-calibration)
 
 ---
 
