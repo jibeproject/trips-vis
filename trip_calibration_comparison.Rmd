@@ -441,7 +441,8 @@ ggplot(trips_main, aes(x = dist * 1000, color = scenario)) +
   theme_minimal(base_size = 12) +
   theme(legend.position = "bottom") + 
   scale_y_continuous(limits = c(0, 1)) +
-  facet_grid(mode ~ ., scales = "fixed") +
+  facet_grid(mode ~ ., scales = "free_y", switch = "both") +
+  theme(strip.placement = "outside") +
   scale_color_manual(values = c("Pre-Calibration" = "#87CEEB", 
                                 "Post-Calibration" = "#4A90E2", 
                                 "VISTA" = "#FF6B6B"))
@@ -684,24 +685,22 @@ if(length(worsened_modes) > 0) {
 
 ### Key Findings
 
-Since we were specifically calibrating the trip distribution, its not surprising that on the whole this has improved.  However, overall, mode share estimates appear to have somehow worsed.
+Following trip distribution and mode share calibration for the Melbourne model, the overall results better align with the observed VISTA survey data.  Some limitations remain, which are worth noting.
 
 ## Trip distribution by purpose (improved)
 
-Trip distribution post-calibration now more closely matches VISTA for all modes, except for walking.  This is because trip distances were previously under estimated; now they have increased and are approximately matched.  However, walking trips are the exception: these were previously over-estimated, and now this is slightly more the case; although, the differences are small.  I think with regards to trip distribution, we can consider calibration successful:
+With the addition of mode choice calibration, relative to the pre-calibration results median trip distance estimates for car passengers, public transport and cycling more closely approximate the VISTA distribution.   The median distance for car driving trips is 1.8 km over-estimated (previously 1.5 km under-estimated), and walking trip median distance at 1.62 km is further over-estimated (previously 1 km, compared with VISTA median of 0.76 km).  The minor disjunct for walking and driving of 1-2 km I think is a fair trade off for the vast improvement in public transport (previously 7.5 km under-estimated, now 0.60 km), and still notable improvements for cycling and car passenger driving.
 
-## Mode share (worsened)
+## Mode share (acceptable)
 
-Although we didn't directly calibrate mode choice, by shifting trips to longer distances this indirectly influences mode choice; for the worse, it seems, despite closer match to VISTA survey data.
-
-In short, fewer people choose to walk, and more people choose to use PT or cycle; car mode share seems similar.
+Having calibrated mode choice following trip distribution calibration, the post-calibration results are similar to pre-calibration (which did have mode choice calibration implemented).  The post calibration results are no longer worse, and instead remain approximately similar to VISTA.  Cycling mode share remains slightly over-estimated.
 
 ## Weekly trip distance and time estimates per person
 
-- Estimates of person-distance and time spent using different modes were improved post-calibration  for driving/passenger car modes (although still under-estimated)
-- Public transport distance was over-estimated, but time was under-estimated (and an improvement on pre-calibration)
-- walking distance estimates were improved, but time was over-estimated (make sense perhaps; we over-estimate the length of walking trips)
-- cycling distance and time were over-estimated (slightly under-estimated pre-calibration)
+- Estimates of person-distance and time spent using different modes were improved post-calibration  for all modes except cycling and walking (over-estimated, but not by much in absolute terms, e.g. over-estimation of average weekly distance was 4.4km over-estimated for walking post-calibration; pre-calibration it was 0.6km)
+- average weekly time was improved for all modes except for walking.  
+    -  Cycling time now matches VISTA
+    - PT and car time are notably improved, but still greatly under-estimated (congestion effect?); VISTA car times are more than double the post-calibration estimates.
 
 ---
 
