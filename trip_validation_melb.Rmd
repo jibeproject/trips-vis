@@ -897,21 +897,3 @@ median_summary %>%
   ) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.1)))
 ```
-
-# Observations
-
-A small number of trip records (< 0.1% ) were excluded from diagnostic analysis due to zero distance or time, or infinite values for time and distance. These exclusions are unlikely to significantly affect the overall analysis.  Likewise, a small number of trip records (0.1%) were excluded due to null trip weights in the VISTA data.
-
-Considering trips by purpose, the Baseline scenario proportions closely resemble those of the VISTA_noWeight dataset, albeit with more home-based recreation trips (22.2% compared to 17.6%) and fewer home-based-other and non-home based other trips (18.1% compared to 24.2%, as combined 'other').
-
-Considering trips by bracket, the Baseline scenario over estimates the proportion of trips between 1-3km (36.8% compared to 26%), and to a lesser extent 3-5km (18.2% compared to 14%), while underestimating those greater than 5km (for example, 10-20km is 6.9% instead of 14-15%).
-
-For walking, the baseline scenario underestimates trips under 1000m distance (47%, compared to 60%) while overestimating those from 1 to 3 km (49.1% compared to 37.4%).  For cycling, the baseline scenario overestimates trips under 1000m distance (27% compared to 17%) and those from 1 to 3 km (51.3% compared to 33.5%), while longer distance cycling trips are underestimated.  This may have implications for mode shift estimates in the cycling intervention, where greater potential for shifting from driving to cycling may be possible for shorter trips.
-
-The distribution of trips lengths is underestimated for all modes relative to the VISTA survey, with the exception of walking.  This was particularly the case for public transport where the median trip distance was 5.4km in the Baseline scenario, less than half the VISTA median public transport distance of 12.96 km.
-
-Mode share was approximately similar between the Baseline and VISTA scenarios; the VISTA_noWeight scenario had higher estimates for driving (50.4% compared to 44.8%), and lower for walking (16.5% compared to 18.1%).  The Baseline scenario overestimated the proportion of cycling trips by a factor of approximately 2 (3.6% compared to approximatley 1.8% in both VISTA scenarios).  
-
-Walking was under-estimated, while cycling and driving were over-estimated for short trips of less than 1000m.  
-
-The average weekly distance for vehicle travel (driving or passenger) was underestimated in the Baseline scenario (for driving, 50km compared to approximately 75km+ for VISTA), as was the distance of public transport usage (10.4 km compared to more than 16km for VISTA scenarios).  However, walking and cycling distance estimates were approximately similar (if a slight over-estimation in walking distance, 3.4km compared to 2.8km for VISTA).

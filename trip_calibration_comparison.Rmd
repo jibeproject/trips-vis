@@ -683,25 +683,6 @@ if(length(worsened_modes) > 0) {
 }
 ```
 
-### Key Findings
-
-Following trip distribution and mode share calibration for the Melbourne model, the overall results better align with the observed VISTA survey data.  Some limitations remain, which are worth noting.
-
-## Trip distribution by purpose (improved)
-
-With the addition of mode choice calibration, relative to the pre-calibration results median trip distance estimates for car passengers, public transport and cycling more closely approximate the VISTA distribution.   The median distance for car driving trips is 1.8 km over-estimated (previously 1.5 km under-estimated), and walking trip median distance at 1.62 km is further over-estimated (previously 1 km, compared with VISTA median of 0.76 km).  The minor disjunct for walking and driving of 1-2 km I think is a fair trade off for the vast improvement in public transport (previously 7.5 km under-estimated, now 0.60 km), and still notable improvements for cycling and car passenger driving.
-
-## Mode share (acceptable)
-
-Having calibrated mode choice following trip distribution calibration, the post-calibration results are similar to pre-calibration (which did have mode choice calibration implemented).  The post calibration results are no longer worse, and instead remain approximately similar to VISTA.  Cycling mode share remains slightly over-estimated.
-
-## Weekly trip distance and time estimates per person
-
-- Estimates of person-distance and time spent using different modes were improved post-calibration  for all modes except cycling and walking (over-estimated, but not by much in absolute terms, e.g. over-estimation of average weekly distance was 4.4km over-estimated for walking post-calibration; pre-calibration it was 0.6km)
-- average weekly time was improved for all modes except for walking.  
-    -  Cycling time now matches VISTA
-    - PT and car time are notably improved, but still greatly under-estimated (congestion effect?); VISTA car times are more than double the post-calibration estimates.
-
 ---
 
 *Analysis completed on `r Sys.Date()`*
